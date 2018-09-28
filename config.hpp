@@ -1,4 +1,4 @@
 #pragma once
 
-#define IPQ_ASSERT()
-#define IPQ_STATIC_ASSERT()
+#define IPQ_ASSERT(x)
+#define IPQ_STATIC_ASSERT(x)
