@@ -46,9 +46,13 @@ public:
 };
 
 template <typename KeyTy, typename ValTy, typename LockTy = std::shared_mutex> class IntervalTreeMRSW {
-  LockTy mutex;
+  LockTy writer_lock;
   IntervalTree<KeyTy, ValTy> int_tree;
 public:
+  void batchRangeUpdate() {
+    writer_lock.lock();
+  }
+
   void rangeUpdate(KeyTy key1, KeyTy key2, ValTy val) {
     mutex.lock();
     int_tree.rangeUpdate(key1, key2, val);
