@@ -4,16 +4,45 @@
 
 #include <cstdint>
 #include <limits>
+#include <llvm/ADT/SmallVector.h>
 #include <type_traits>
 #include <utility>
+#include <functional>
 
 namespace ipq {
+
+template <typename ElementTy, typename CompTy>
+struct ThreeWayCompAdaptor {
+  constexpr int operator()(const ElementTy & e1, const ElementTy & e2) const {
+    auto comp1 = CompTy{}(e1, e2);
+    if (comp1) {
+      return -1;
+    }
+    auto comp2 = CompTy{}(e2, e1);
+    return comp2 ? 1 : 0;
+  }
+};
+
+template <typename T>
+class DummyVector {
+public:
+  void push_back(const T&) {}
+  template <typename ...A>
+  void emplace_back(A...) {}
+};
 
 namespace internal {
 template <typename P> struct LeafNode;
 
 template <typename P> struct InternalNode;
+template <typename ElementTy, typename ThreeWayCompTy, typename AllocTy, int MinNodeDegree>
+class BTreeSet;
 
+template <typename KeyTy, typename ValueTy, typename ThreeWayCompTy, typename AllocTy, int MinNodeDegree>
+class BTreeMap;
+
+/* Something interesting https://godbolt.org/z/WI3pGh
+ */
 template <int MinChildDeg, typename Value, typename ThreeWayComp,
           typename AllocTy>
 struct BTreeParams {
@@ -56,21 +85,6 @@ private:
     new (to) ValueTy(std::move(*from));
     from->~ValueTy();
   }
-  static void transfer(ValueTy &from, ValueTy &to) { transfer(&from, &to); }
-  template <bool WithLeftPointer = false, bool WithRightPointer = false>
-  void transfer(DegreeCountTy from, InternalNode &to, DegreeCountTy to_idx) {
-    transfer(this->values_[from], to.values[to_idx]);
-    if (WithRightPointer) {
-      to.children_[to_idx + 1] = children_[from + 1];
-    }
-    if (WithLeftPointer) {
-      to.children_[to_idx] = children_[to_idx];
-    }
-  }
-  template <bool WithRightPointer = false, bool WithLeftPointer = false>
-  void transfer(DegreeCountTy from, InternalNode *to, DegreeCountTy to_idx) {
-    transfer(from, *to, to_idx);
-  }
 
 public:
   InternalNode *children_[P::MaxChildDegree];
@@ -103,7 +117,7 @@ public:
    * Post-condition: new_root is the new root. this and new_child is new_root's
    * two children
    */
-  InternalNode* split_root(InternalNode *new_root, InternalNode *new_child) {
+  InternalNode *split_root(InternalNode *new_root, InternalNode *new_child) {
     transfer(SplitIndex, new_root, 0);
     new_root->node_degree_ = 1;
     new_root->children_[0] = this;
@@ -159,10 +173,28 @@ public:
                       DegreeCountTy idx) {
     transferToLeft<WithChildren>(*other, *parent, idx);
   }
+
+  static void transfer(ValueTy &from, ValueTy &to) { transfer(&from, &to); }
+  template <bool WithLeftPointer = false, bool WithRightPointer = false>
+  void transfer(DegreeCountTy from, InternalNode &to, DegreeCountTy to_idx) {
+    transfer(this->values_[from], to.values[to_idx]);
+    if (WithRightPointer) {
+      to.children_[to_idx + 1] = children_[from + 1];
+    }
+    if (WithLeftPointer) {
+      to.children_[to_idx] = children_[to_idx];
+    }
+  }
+  template <bool WithRightPointer = false, bool WithLeftPointer = false>
+  void transfer(DegreeCountTy from, InternalNode *to, DegreeCountTy to_idx) {
+    transfer(from, *to, to_idx);
+  }
 };
 
 template <typename P>
 class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
+  using LeafNodeAllocTy = P::LeafNodeAllocTy;
+  using InternalNodeAllocTy = P::InternalNodeAllocTy;
   using LeafNodeTy = typename P::LeafNodeTy;
   using InternalNodeTy = typename P::InternalNodeTy;
   using ThreeWayCompTy = typename P::ThreeWayCompTy;
@@ -275,12 +307,14 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
       if (res.second) {
         InternalNodeTy *left_node = node->children_[idx];
         if (left_node->node_degree_ >= MinChildDegree) {
-          node->values[idx] = removePrec(left_node, height, target);
+          node->values[idx].~ValueTy();
+          removePrec(left_node, height, &node->values[idx]);
           return true;
         } else {
           InternalNodeTy *right_node = node->children_[idx + 1];
           if (right_node->node_degree_ >= MinChildDegree) {
-            node->values[idx] = removeSucc(right_node, height, target);
+            node->values[idx].~ValueTy();
+            removeSucc(right_node, height, &node->values[idx]);
             return true;
           } else {
             if (height + 1 == internal_height_) {
@@ -332,13 +366,101 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
       return false;
     }
   }
-  ValueTy removePrec(InternalNodeTy *node, int height, const ValueTy &value) {
-    return ValueTy{};
+  void removePrec(InternalNodeTy *node, int height, ValueTy *pos) {
+    llvm::SmallVector<InternalNodeTy *, 32> nodes;
+    for (; height < internal_height_; ++height) {
+      nodes.push_back(node);
+      nodes = nodes->children_[nodes->node_degree_];
+    }
+    InternalNodeTy::transter(&nodes->values_[nodes->node_degree_ - 1], pos);
+    --node->node_degree_;
+    bool is_leaf = true;
+    while (!nodes.empty()) {
+      if (node->node_degree_ >= MinNodeDegree) {
+        return;
+      }
+      InternalNodeTy *parent = nodes.back();
+      InternalNodeTy *left_sibling = parent->children_[nodes->node_degree_ - 1];
+      if (left_sibling->node_degree_ > MinNodeDegree) {
+        if (is_leaf) {
+          left_sibling->transferToRight<true>(node, parent,
+                                              parent->node_degree_ - 1);
+        } else {
+          left_sibling->transferToRight<false>(node, parent,
+                                               parent->node_degree_ - 1);
+        }
+        return;
+      } else {
+        parent->mergeAt(parent->node_degree_ - 1);
+        node = parent;
+        nodes.pop_back();
+      }
+      is_leaf = false;
+    }
   }
-  ValueTy removeSucc(InternalNodeTy *node, int height, const ValueTy &value) {}
 
-public:
+  void removeSucc(InternalNodeTy *node, int height, ValueTy *pos) {
+    llvm::SmallVector<InternalNodeTy *, 32> nodes;
+    for (; height < internal_height_; ++height) {
+      nodes.push_back(node);
+      nodes = nodes->children_[0];
+    }
+    InternalNodeTy::transter(&nodes->values_[0], pos);
+    for (int i = 1; i < node->node_degree_; ++i) {
+      InternalNodeTy::transter(nodes->values_[i], nodes->values_[i - 1]);
+    }
+    --node->node_degree_;
+    bool is_leaf = true;
+    while (!nodes.empty()) {
+      if (node->node_degree_ >= MinNodeDegree) {
+        return;
+      }
+      InternalNodeTy *parent = nodes.back();
+      InternalNodeTy *right_sibling = parent->children_[1];
+      if (right_sibling->node_degree_ > MinNodeDegree) {
+        if (is_leaf) {
+          right_sibling->transferToLeft<true>(node, parent, 0);
+        } else {
+          right_sibling->transferToLeft<false>(node, parent, 0);
+        }
+        return;
+      } else {
+        parent->mergeAt(0);
+        node = parent;
+        nodes.pop_back();
+      }
+      is_leaf = false;
+    }
+  }
+  template <typename ElementTy, typename AllocTy, typename ThreeWayCompTy,
+            int MinNodeDegree>
+  friend class BTreeSet;
+
+  template <typename KeyTy, typename ValueTy, typename ThreeWayCompTy,
+            typename AllocTy,
+            int MinNodeDegree>
+  friend class BTreeMap;
 };
+
+template <typename ElementTy, typename ThreeWayCompTy = ThreeWayCompAdaptor<ElementTy, std::less<ElementTy>>, typename AllocTy = std::allocator<ElementTy>,
+          int MinNodeDegree = 4>
+class BTreeSet {
+  using Param = BTreeParams<MinNodeDegree, ElementTy, ThreeWayCompTy, AllocTy>;
+  BTreeImpl<Param> btree;
+public:
+  bool add(ElementTy & e) {
+  }
+  bool remove(ElementTy & e) {
+  }
+  bool contains(ElementTy& e) {
+  }
+};
+
+template <typename KeyTy, typename ValueTy, typename ThreeWayCompTy = ThreeWayCompAdaptor<std::pair<KeyTy, ValueTy>, std::less<std::pair<KeyTy, ValueTy>>>,
+          typename AllocTy = std::allocator<std::pair<KeyTy, ValueTy>>,
+          int MinNodeDegree = 4>
+class BTreeMap {};
+
 } // namespace internal
 } // namespace ipq
 
