@@ -1,3 +1,3 @@
 #pragma once
-
-#define IPQ_ASSERT(x)
+#include <cassert>
+#define IPQ_ASSERT(x) assert(x)
