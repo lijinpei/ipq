@@ -90,6 +90,7 @@ struct LeafNode {
   using ValueTy = typename P::ValueTy;
   enum {
     MaxNodeDegree = P::MaxNodeDegree,
+    MinNodeDegree = P::MinNodeDegree,
     BSearchThreshold = P::BSearchThreshold
   };
   DegreeCountTy node_degree_;
@@ -148,20 +149,21 @@ struct LeafNode {
     from->~ValueTy();
   }
   static void transfer(ValueTy &from, ValueTy &to) { transfer(&from, &to); }
-  void transfer(DegreeCountTy from, InternalNode & to, DegreeCountTy to_idx) {
+  void transfer(DegreeCountTy from, LeafNode &to, DegreeCountTy to_idx) {
     transfer(this->values_[from], to.values_[to_idx]);
   }
-  void transfer(DegreeCountTy from, InternalNode * to, DegreeCountTy to_idx) {
+  void transfer(DegreeCountTy from, LeafNode *to, DegreeCountTy to_idx) {
     transfer(from, *to, to_idx);
   }
-  void remove(DegreeCountTy idx) {
+  void leafRemove(DegreeCountTy idx) {
     for (DegreeCountTy i = idx + 1; i < node_degree_; ++i) {
       transfer(values_[i], values_[i - 1]);
     }
     --node_degree_;
   }
   void dump(std::ostream &os, int h) {
-    os << "height: " << h << " elements: " << int(node_degree_) << ' ' << std::flush;
+    os << "height: " << h << " elements: " << int(node_degree_) << ' '
+       << std::flush;
     for (DegreeCountTy i = 0; i < node_degree_; ++i) {
       os << ' ' << values_[i] << std::flush;
     }
@@ -182,6 +184,7 @@ struct InternalNode : LeafNode<P> {
     MaxChildDegree = P::MaxChildDegree,
     MinChildDegree = P::MinChildDegree
   };
+
  public:
   InternalNode *children_[MaxChildDegree];
   /* Those four functions move this->values[start..end) to the uninitialized
@@ -211,8 +214,8 @@ struct InternalNode : LeafNode<P> {
   template <bool WithLeftChildPtr = false, bool WithRightChildPtr = false>
   void rangeTransferRight(DegreeCountTy start, DegreeCountTy end,
                           InternalNode &to_node, DegreeCountTy to_idx) {
-    rangeTransferRight<WithLeftPointer, WithRightChildPtr>(start, end, &to_end,
-                                                           to_idx);
+    rangeTransferRight<WithLeftChildPtr, WithRightChildPtr>(start, end,
+                                                            &to_node, to_idx);
   }
 
   template <bool WithLeftChildPtr = false, bool WithRightChildPtr = false>
@@ -230,176 +233,173 @@ struct InternalNode : LeafNode<P> {
         to_node->children_[to_idx + i + 1] = children_[start + i + 1];
       }
     }
+  }
 
-    template <bool WithLeftChildPtr = false, bool WithRightChildPtr = false>
-    void rangeTransferLeft(DegreeCountTy start, DegreeCountTy end,
-                           InternalNode & to_node, DegreeCountTy to_idx) {
-      rangeTransferLeft<WithLeftPointer, WithRightChildPtr>(start, end, &to_end,
-                                                            to_idx);
-    }
+  template <bool WithLeftChildPtr = false, bool WithRightChildPtr = false>
+  void rangeTransferLeft(DegreeCountTy start, DegreeCountTy end,
+                         InternalNode &to_node, DegreeCountTy to_idx) {
+    rangeTransferLeft<WithLeftChildPtr, WithRightChildPtr>(start, end, &to_node,
+                                                           to_idx);
+  }
 
-    /* Get a node form the child at index idx.
-     * Predicate: see the asserts
-     * new_child is uninitialized.
-     * WithChildren indicates whether child's a leaf node.
-     */
-    template <bool WithChildren>
-    void splitFromChild(typename P::DegreeCountTy idx,
-                        InternalNode * new_child) {
-      IPQ_ASSERT(!this->isFull());
-      IPQ_ASSERT(idx < this->node_degree_);
-      InternalNode *child = children_[idx];
-      IPQ_ASSERT(child && child->isFull());
-      child->rangeTransferRight<false, WithChildren>(
-          SplitIndex + 1, MaxNodeDegree, new_child, 0);
-      if (WithChildren) {
-        new_child->children_[0] = child->children_[SplitIndex + 1];
-      }
-      new_child->node_degree_ = MaxNodeDegree - SplitIndex - 1;
-      rangeTransferRight<false, true>(idx, this->node_degree_, this, idx + 1);
-      child->transfer(SplitIndex, this, idx);
-      children_[idx + 1] = new_child;
-      child->node_degree_ = SplitIndex;
-      ++this->node_degree_;
+  /* Get a node form the child at index idx.
+   * Predicate: see the asserts
+   * new_child is uninitialized.
+   * WithChildren indicates whether child's a leaf node.
+   */
+  template <bool WithChildren>
+  void splitFromChild(typename P::DegreeCountTy idx, InternalNode *new_child) {
+    IPQ_ASSERT(!this->isFull());
+    IPQ_ASSERT(idx <= this->node_degree_);
+    InternalNode *child = children_[idx];
+    IPQ_ASSERT(child && child->isFull());
+    child->rangeTransferRight<false, WithChildren>(SplitIndex + 1,
+                                                   MaxNodeDegree, new_child, 0);
+    if (WithChildren) {
+      new_child->children_[0] = child->children_[SplitIndex + 1];
     }
+    new_child->node_degree_ = MaxNodeDegree - SplitIndex - 1;
+    rangeTransferRight<false, true>(idx, this->node_degree_, this, idx + 1);
+    child->transfer(SplitIndex, this, idx);
+    children_[idx + 1] = new_child;
+    child->node_degree_ = SplitIndex;
+    ++this->node_degree_;
+  }
 
-    /* Predicate: this is full. this is a root node;
-     * new_root, new_child are uninitialzed.
-     * if (!WithChildren) this and new_child are LeafNodeTy, new_root is
-     * InternalNodeTy. else this, new_child and new_root are InternalNodeTy
-     * Post-condition: new_root is the new root. this and new_child is
-     * new_root's two children
-     */
-    template <bool WithChildren>
-    InternalNode *splitAsRoot(InternalNode * new_root,
-                              InternalNode * new_child) {
-      transfer(SplitIndex, new_root, 0);
-      new_root->node_degree_ = 1;
-      new_root->children_[0] = this;
-      new_root->children_[1] = new_child;
-      rangeTransferLeft<false, WithChildren>(SplitIndex + 1, new_child, 0);
-      if (WithChildren) {
-        new_child->children_[0] = children_[SplitIndex + 1];
-      }
-      new_child->node_degree_ = MaxNodeDegree - SplitIndex - 1;
-      this->node_degree_ = SplitIndex;
-      return new_root;
+  /* Predicate: this is full. this is a root node;
+   * new_root, new_child are uninitialzed.
+   * if (!WithChildren) this and new_child are LeafNodeTy, new_root is
+   * InternalNodeTy. else this, new_child and new_root are InternalNodeTy
+   * Post-condition: new_root is the new root. this and new_child is
+   * new_root's two children
+   */
+  template <bool WithChildren>
+  InternalNode *splitAsRoot(InternalNode *new_root, InternalNode *new_child) {
+    this->transfer(SplitIndex, new_root, 0);
+    new_root->node_degree_ = 1;
+    new_root->children_[0] = this;
+    new_root->children_[1] = new_child;
+    rangeTransferLeft<false, WithChildren>(SplitIndex + 1, this->node_degree_,
+                                           new_child, 0);
+    if (WithChildren) {
+      new_child->children_[0] = children_[SplitIndex + 1];
     }
+    new_child->node_degree_ = MaxNodeDegree - SplitIndex - 1;
+    this->node_degree_ = SplitIndex;
+    return new_root;
+  }
 
-    /* Those four function transfer one rightmost/leftmost node to its
-     * right/left sibling's leftmost/rightmost position
-     * this node should not be isMinimal(), sibling should not be isFull();
-     * parent is the parent of these two nodes. self_idx is the index of this
-     * node.
-     */
-    template <bool WithChildren>
-    void transferOneToRightSibling(
-        InternalNode * sibling, InternalNode * parent, DegreeCountTy self_idx) {
-      IPQ_ASSERT(this && !this->isMinimal());
-      IPQ_ASSERT(sibling && !sibling->isFull());
-      IPQ_ASSERT(parent && self_idx < parent->node_degree_);
-      IPQ_ASSERT(parent->children_[self_idx] == this &&
-                 parent->children_[self_idx + 1] == sibling);
-      sibling->rangeTransferRight<false, WithChildren>(0, sibling->node_degree_,
-                                                       sibling, 1);
-      transfer(parent->values_[self_idx], sibling->values_[0]);
-      transfer(this->node_degree_ - 1, parent, self_idx);
-      if (WithChildren) {
-        sibling->children_[1] = sibling->children_[0];
-        sibling->children_[0] = children_[this->node_degree_];
-      }
-      ++other.node_degree_;
-      --this->node_degree_;
+  /* Those four function transfer one rightmost/leftmost node to its
+   * right/left sibling's leftmost/rightmost position
+   * this node should not be isMinimal(), sibling should not be isFull();
+   * parent is the parent of these two nodes. self_idx is the index of this
+   * node.
+   */
+  template <bool WithChildren>
+  void transferOneToRightSibling(InternalNode *sibling, InternalNode *parent,
+                                 DegreeCountTy self_idx) {
+    IPQ_ASSERT(!this->isMinimal());
+    IPQ_ASSERT(sibling && !sibling->isFull());
+    IPQ_ASSERT(parent && self_idx < parent->node_degree_);
+    IPQ_ASSERT(parent->children_[self_idx] == this &&
+               parent->children_[self_idx + 1] == sibling);
+    sibling->rangeTransferRight<false, WithChildren>(0, sibling->node_degree_,
+                                                     sibling, 1);
+    LeafNodeTy::transfer(parent->values_[self_idx], sibling->values_[0]);
+    LeafNodeTy::transfer(this->node_degree_ - 1, parent, self_idx);
+    if (WithChildren) {
+      sibling->children_[1] = sibling->children_[0];
+      sibling->children_[0] = children_[this->node_degree_];
     }
-    template <bool WithChildren>
-    void transferOneToRightSibling(
-        InternalNode & sibling, InternalNode & parent, DegreeCountTy self_idx) {
-      transferToRightSibling<WithChildren>(&sibling, &parent, self_idx);
-    }
+    ++sibling->node_degree_;
+    --this->node_degree_;
+  }
+  template <bool WithChildren>
+  void transferOneToRightSibling(InternalNode &sibling, InternalNode &parent,
+                                 DegreeCountTy self_idx) {
+    transferOneToRightSibling<WithChildren>(&sibling, &parent, self_idx);
+  }
 
-    template <bool WithChildren>
-    void transferOneToLeftSibling(InternalNode & sibling, InternalNode & parent,
-                                  DegreeCountTy self_idx) {
-      transferToLeftSibling<WithChildren>(&sibling, &parent, self_idx);
+  template <bool WithChildren>
+  void transferOneToLeftSibling(InternalNode &sibling, InternalNode &parent,
+                                DegreeCountTy sibling_idx) {
+    transferOneToLeftSibling<WithChildren>(&sibling, &parent, sibling_idx);
+  }
+  template <bool WithChildren>
+  void transferOneToLeftSibling(InternalNode *sibling, InternalNode *parent,
+                                DegreeCountTy sibling_idx) {
+    IPQ_ASSERT(!this->isMinimal());
+    IPQ_ASSERT(sibling && !sibling->isFull());
+    IPQ_ASSERT(parent && sibling_idx < parent->node_degree_);
+    IPQ_ASSERT(parent->children_[sibling_idx + 1] == this &&
+               parent->children_[sibling_idx] == sibling);
+    LeafNodeTy::transfer(parent->values_[sibling_idx],
+                         sibling->values_[sibling->node_degree_]);
+    LeafNodeTy::transfer(this->values_, parent->values_ + sibling_idx);
+    if (WithChildren) {
+      sibling->children_[sibling->node_degree_ + 1] = children_[0];
+      children_[0] = children_[1];
     }
-    template <bool WithChildren>
-    void transferOneToLeftSibling(InternalNode * sibling, InternalNode * parent,
-                                  DegreeCountTy self_idx) {
-      IPQ_ASSERT(this && !this->isMinimal());
-      IPQ_ASSERT(sibling && !sibling->isFull());
-      IPQ_ASSERT(parent && self_idx < parent->node_degree_);
-      IPQ_ASSERT(parent->children_[self_idx] == this &&
-                 parent->children_[self_idx - 1] == sibling);
-      transfer(parent->values_[idx],
-                           sibling->values_[other.node_degree_]);
-      transfer(this->values_, parent->values_ + idx);
-      if (WithChildren) {
-        other.children_[other.node_degree_ + 1] = children_[0];
-        children_[0] = children_[1];
-      }
-      rangeTransferLeft<false, WithChildren>(1, this->node_degree_, this, 0);
-      ++other.node_degree_;
-      --this->node_degree_;
-    }
+    rangeTransferLeft<false, WithChildren>(1, this->node_degree_, this, 0);
+    ++sibling->node_degree_;
+    --this->node_degree_;
+  }
 
-    /*
-    */
-    void dump(int h, int internal_height_, std::ostream &os) {
-      LeafNode<P>::dump(os, h);
-      if (h != internal_height_) {
-        for (DegreeCountTy i = 0; i <= this->node_degree_; ++i) {
-          children_[i]->dump(h + 1, internal_height_, os);
-        }
+  void dump(int h, int internal_height_, std::ostream &os) {
+    LeafNode<P>::dump(os, h);
+    if (h != internal_height_) {
+      for (DegreeCountTy i = 0; i <= this->node_degree_; ++i) {
+        children_[i]->dump(h + 1, internal_height_, os);
       }
     }
+  }
 
-    /* Merge the two children at idx, idx - 1 with values_[idx]
-     * see asserts for the predicates.
-     * WithChildren indicates children have children_ fileds.
-     * Postcondition: left_child is the new child, right_child should be
-     * deallocated.
-     */
-    template <bool WithChildren>
-    void mergeChildrenAt(DegreeCountTy idx) {
-      assert(idx < this->node_degree_);
-      InternalNode *left_child = children_[idx],
-                   *right_child = children_[idx + 1];
-      IPQ_ASSERT(left_child->node_degree_ == MinNodeDegree);
-      IPQ_ASSERT(right_child->node_degree_ == MinNodeDegree);
-      transfer(idx, left_child, MinNodeDegree);
-      for (DegreeCountTy i = 0; i < MinNodeDegree; ++i) {
-        right_child->transfer<WithChildren, false>(i, left_child,
-                                                   MinNodeDegree + 1 + i);
-      }
-      left_child->node_degree_ = MaxNodeDegree;
-      if (WithChildren) {
-        left_child->children_[MaxNodeDegree] =
-            right_child->children_[MinNodeDegree];
-      }
-      for (DegreeCountTy i = idx; i + 1 < this->node_degree_; ++i) {
-        transfer<false, true>(i + 1, this, i);
-      }
-      --this->node_degree_;
+  /* Merge the two children at idx, idx - 1 with values_[idx]
+   * see asserts for the predicates.
+   * WithChildren indicates children have children_ fileds.
+   * Postcondition: left_child is the new child, right_child should be
+   * deallocated.
+   */
+  template <bool WithChildren>
+  void mergeChildrenAt(DegreeCountTy idx) {
+    assert(idx < this->node_degree_);
+    InternalNode *left_child = children_[idx],
+                 *right_child = children_[idx + 1];
+    IPQ_ASSERT(left_child->node_degree_ == MinNodeDegree);
+    IPQ_ASSERT(right_child->node_degree_ == MinNodeDegree);
+    this->transfer(idx, left_child, MinNodeDegree);
+    right_child->rangeTransferLeft<WithChildren, false>(
+        0, MinNodeDegree, left_child, MinNodeDegree + 1);
+    left_child->node_degree_ = MaxNodeDegree;
+    if (WithChildren) {
+      left_child->children_[MaxNodeDegree] =
+          right_child->children_[MinNodeDegree];
     }
+    rangeTransferLeft<false, true>(idx + 1, this->node_degree_, this, idx);
+    --this->node_degree_;
+  }
 };
 
 template <typename P>
-class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
+class BTreeImpl : P::LeafNodeAllocTy,
+                  P::InternalNodeAllocTy,
+                  P::ThreeWayCompTy {
   using LeafNodeAllocTy = typename P::LeafNodeAllocTy;
   using InternalNodeAllocTy = typename P::InternalNodeAllocTy;
   using LeafNodeTy = typename P::LeafNodeTy;
   using InternalNodeTy = typename P::InternalNodeTy;
   using ThreeWayCompTy = typename P::ThreeWayCompTy;
   using ValueTy = typename P::ValueTy;
+  using DegreeCountTy = typename P::DegreeCountTy;
   enum {
     MinNodeDegree = P::MinNodeDegree,
     MaxNodeDegree = P::MaxNodeDegree,
     MinChildDegree = P::MinChildDegree,
     MaxChildDegree = P::MaxChildDegree,
   };
-  using DegreeCountTy = typename P::DegreeCountTy;
-  std::size_t internal_height_;  // mininal value of height is 1 for an empty or
-                                 // one-level tree
+
+  // height of internal nodes
+  std::size_t internal_height_;
   InternalNodeTy *root_;
 
   template <typename ContTy>
@@ -431,48 +431,66 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
    *            right_child->node_degree_ == MinNodeDegree
    */
   InternalNodeTy *mergeChildrenAt(InternalNodeTy *parent, DegreeCountTy idx,
-                               size_t parent_height) {
-    IPQ_ASSERT(parent->node_degree_ > MinNodeDegree);
+                                  size_t &parent_height) {
+    IPQ_ASSERT(parent == root_ || parent->node_degree_ > MinNodeDegree);
     IPQ_ASSERT(idx < parent->node_degree_);
     InternalNodeTy *left_child = parent->children_[idx],
                    *right_child = parent->children_[idx + 1];
     IPQ_ASSERT(left_child->node_degree_ == MinNodeDegree);
     IPQ_ASSERT(right_child->node_degree_ == MinNodeDegree);
-    std::pair<InternalNodeTy*, InternalNodeTy*> res;
     if (parent_height + 1 == internal_height_) {
-      parent->mergeChildrenAt<false>(idx);
+      parent->template mergeChildrenAt<false>(idx);
       this->LeafNodeAllocTy::deallocate(right_child, 1);
     } else {
-      parent->mergeChildrenAt<true>(idx);
+      parent->template mergeChildrenAt<true>(idx);
       this->InternalNodeAllocTy::deallocate(right_child, 1);
+    }
+    if (root_->node_degree_ == 0) {
+      this->InternalNodeAllocTy::deallocate(root_, 1);
+      root_ = left_child;
+      --internal_height_;
+      --parent_height;
     }
     return left_child;
   }
 
-  /* Predicate: parent->node_degree_ > MinNodeDegree
-   * If parent's idx-th child's degree equals to MinNodeDegree, this function
-   * increase the child's degree and return the new child.
+  /* Predicate: parent == root_ || !parent->isMinmal()
+   * This function makes parent's idx-th not minimal by stealing a node from
+   * child' sibling or transfer a node from parent
    */
-  InternalNodeTy *tryIncreaseChildDegree(InternalNodeTy *parent,
-                                         size_t parent_height) {
+  InternalNodeTy *tryMakeChildNonMinimal(InternalNodeTy *parent,
+                                         size_t &parent_height,
                                          DegreeCountTy idx) {
-    IPQ_ASSERT(parent->node_degree_ > MinNodeDegree);
+    IPQ_ASSERT(parent == root_ || !parent->isMinimal());
     InternalNodeTy *child = parent->children_[idx];
-    if (child->node_degree_ > MinChildDegree) {
+    if (!child->isMinimal()) {
       return child;
     }
     if (idx) {
-      InternalNodeTy* left_child = parent->children_[idx - 1];
-      if (left_child->node_degree_ > MinNodeDegree) {
-        left_child->transferToRight(child, parent, idx - 1);
+      if (InternalNodeTy *left_child = parent->children_[idx - 1];
+          !left_child->isMinimal()) {
+        if (parent_height + 1 < internal_height_) {
+          left_child->template transferOneToRightSibling<true>(child, parent,
+                                                               idx - 1);
+        } else {
+          left_child->template transferOneToRightSibling<false>(child, parent,
+                                                                idx - 1);
+        }
         return child;
       }
     }
-    if (idx + 1 < parent->node_degree_) {
-      InternalNodeTy* right_child = parent->children_[idx + 1];
-      if (right_child->node_degree_ > MinNodeDegree) {
-        right_child->transferToLeft(child, parent, idx + 1);
-        return child
+
+    if (idx + 1 <= parent->node_degree_) {
+      if (InternalNodeTy *right_child = parent->children_[idx + 1];
+          right_child->node_degree_ > MinNodeDegree) {
+        if (parent_height + 1 < internal_height_) {
+          right_child->template transferOneToLeftSibling<true>(child, parent,
+                                                               idx);
+        } else {
+          right_child->template transferOneToLeftSibling<false>(child, parent,
+                                                                idx);
+        }
+        return child;
       }
     }
     return mergeChildrenAt(parent, idx ? idx - 1 : idx, parent_height);
@@ -480,11 +498,13 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
 
   template <typename ContTy>
   std::pair<ValueTy *, bool> addNonFull(const ValueTy &target, ContTy &path) {
+    IPQ_ASSERT(!root_->isFull());
     InternalNodeTy *node = root_;
     for (size_t height = 0; height < internal_height_; ++height) {
+      IPQ_ASSERT(!node->isFull());
       auto res = node->lower_bound(target);
-      path.emplace_back(node, res.first);
       auto idx = res.first;
+      path.emplace_back(node, idx);
       if (res.second) {
         return {&node->values_[idx], false};
       } else {
@@ -492,13 +512,14 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
         if (child->isFull()) {
           if (height + 1 == internal_height_) {
             LeafNodeTy *new_node = this->LeafNodeAllocTy::allocate(1);
-            node->template split<false>(
+            node->template splitFromChild<false>(
                 idx, static_cast<InternalNodeTy *>(new_node));
           } else {
             InternalNodeTy *new_node = this->InternalNodeAllocTy::allocate(1);
-            node->template split<true>(idx, new_node);
+            node->template splitFromChild<true>(idx, new_node);
           }
-          int cmp = ThreeWayCompTy{}(target, node->values_[idx]);
+          int cmp =
+              this->ThreeWayCompTy::operator()(target, node->values_[idx]);
           if (!cmp) {
             return {&node->values_[idx], false};
           } else if (cmp < 0) {
@@ -511,7 +532,7 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
         }
       }
     }
-    return {node->insert(target), true};
+    return {node->leafInsert(target), true};
   }
 
   template <typename ContTy>
@@ -520,11 +541,11 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
       if (internal_height_) {
         InternalNodeTy *new_node1 = this->InternalNodeAllocTy::allocate(1);
         InternalNodeTy *new_node2 = this->InternalNodeAllocTy::allocate(1);
-        root_ = root_->template split_root<true>(new_node1, new_node2);
+        root_ = root_->template splitAsRoot<true>(new_node1, new_node2);
       } else {
         InternalNodeTy *new_node1 = this->InternalNodeAllocTy::allocate(1);
         LeafNodeTy *new_node2 = this->LeafNodeAllocTy::allocate(1);
-        root_ = root_->template split_root<false>(
+        root_ = root_->template splitAsRoot<false>(
             new_node1, static_cast<InternalNodeTy *>(new_node2));
       }
       ++internal_height_;
@@ -538,85 +559,28 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
     for (size_t height = 0; height < internal_height_; ++height) {
       auto res = node->lower_bound(target);
       auto idx = res.first;
+      InternalNodeTy *left_node = node->children_[idx];
       if (res.second) {
-        InternalNodeTy *left_node = node->children_[idx];
-        if (left_node->node_degree_ >= MinChildDegree) {
+        if (left_node->node_degree_ > MinNodeDegree) {
           node->values_[idx].~ValueTy();
           removePrec(left_node, height + 1, &node->values_[idx]);
           return true;
+        } else if (InternalNodeTy *right_node = node->children_[idx + 1];
+                   right_node->node_degree_ > MinNodeDegree) {
+          node->values_[idx].~ValueTy();
+          removeSucc(right_node, height + 1, &node->values_[idx]);
+          return true;
         } else {
-          InternalNodeTy *right_node = node->children_[idx + 1];
-          if (right_node->node_degree_ >= MinChildDegree) {
-            node->values_[idx].~ValueTy();
-            removeSucc(right_node, height + 1, &node->values_[idx]);
-            return true;
-          } else {
-            std::pair<InternalNodeTy *, InternalNodeTy *> res;
-            if (height + 1 == internal_height_) {
-              res = node->template mergeAt<false>(idx);
-              this->LeafNodeAllocTy::deallocate(res.second, 1);
-            } else {
-              res = node->template mergeAt<true>(idx);
-              this->InternalNodeAllocTy::deallocate(res.second, 1);
-            }
-            if (node == root_ && !node->node_degree_) {
-              --internal_height_;
-              --height;
-              this->InternalNodeAllocTy::deallocate(node, 1);
-              root_ = res.first;
-            }
-            node = res.first;
-          }
+          node = mergeChildrenAt(node, idx, height);
         }
       } else {
-        InternalNodeTy *child = node->children_[idx];
-        if (child->node_degree_ == MinNodeDegree) {
-          if (idx && node->children_[idx - 1]->node_degree_ != MinNodeDegree) {
-            if (height + 1 == internal_height_) {
-              node->children_[idx - 1]->template transferToRight<false>(
-                  child, node, idx - 1);
-            } else {
-              node->children_[idx - 1]->template transferToRight<true>(
-                  child, node, idx - 1);
-            }
-            node = child;
-          } else if (idx != node->node_degree_ &&
-                     node->children_[idx + 1]->node_degree_ != MinNodeDegree) {
-            if (height + 1 == internal_height_) {
-              node->children_[idx + 1]->template transferToLeft<false>(
-                  child, node, idx);
-            } else {
-              node->children_[idx + 1]->template transferToLeft<true>(
-                  child, node, idx);
-            }
-            node = child;
-          } else {
-            std::pair<InternalNodeTy *, InternalNodeTy *> res;
-            if (height + 1 == internal_height_) {
-              res = node->template mergeAt<false>(idx);
-              this->LeafNodeAllocTy::deallocate(res.second, 1);
-            } else {
-              res = node->template mergeAt<true>(idx);
-              this->InternalNodeAllocTy::deallocate(res.second, 1);
-            }
-            if (node == root_ && !root_->node_degree_) {
-              --internal_height_;
-              --height;
-              this->InternalNodeAllocTy::deallocate(root_, 1);
-              root_ = res.first;
-            }
-            node = res.first;
-          }
-        } else {
-          node = child;
-        }
+        node = tryMakeChildNonMinimal(node, height, idx);
       }
+      IPQ_ASSERT(!node->isMinimal());
     }
     auto res = node->lower_bound(target);
-    auto idx = res.first;
     if (res.second) {
-      (node->values_ + idx)->~ValueTy();
-      node->remove(idx);
+      node->leafRemove(res.first);
       return true;
     } else {
       return false;
@@ -624,101 +588,24 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
   }
 
   void removePrec(InternalNodeTy *node, size_t height, ValueTy *pos) {
-    std::cout << "removePrec" << std::endl;
-    std::cout << "height: " << height << std::endl;
-    std::cout << "first value: " << node->values_[0] << std::endl;
-    llvm::SmallVector<InternalNodeTy *, 32> nodes;
+    IPQ_ASSERT(!node->isMinimal());
     for (; height < internal_height_; ++height) {
-      nodes.push_back(node);
-      InternalNodeTy* child = node->children_[node->node_degree_];
-      std::cout << "child degree: " << int(child->node_degree_) << std::endl;
-      if (child->node_degree_ == MinNodeDegree) {
-        std::pair<InternalNodeTy*, InternalNodeTy*> res;
-        if (height + 1 == internal_height_) {
-          res = node->template mergeAt<false>(node->node_degree_ - 1);
-          this->LeafNodeAllocTy::deallocate(res.second, 1);
-        } else {
-          std::cout << "place2" << std::endl;
-          res = node->template mergeAt<true>(node->node_degree_ - 1);
-          std::cout << "place2" << std::endl;
-          this->LeafNodeAllocTy::deallocate(res.second, 1);
-        }
-        node = res.first;
-      } else {
-        node = child;
-      }
-      std::cout << "height: " << height << std::endl;
-      std::cout << "first value: " << node->values_[0] << std::endl;
+      node = tryMakeChildNonMinimal(node, height, node->node_degree_ - 1);
     }
-    transfer(node->values_ + node->node_degree_ - 1, pos);
+    LeafNodeTy::transfer(node->values_ + node->node_degree_ - 1, pos);
     --node->node_degree_;
-    bool is_leaf = true;
-    while (!nodes.empty()) {
-      if (node->node_degree_ >= MinNodeDegree) {
-        return;
-      }
-      InternalNodeTy *parent = nodes.back();
-      InternalNodeTy *left_sibling = parent->children_[node->node_degree_ - 1];
-      if (left_sibling->node_degree_ > MinNodeDegree) {
-        if (is_leaf) {
-          left_sibling->template transferToRight<true>(
-              node, parent, parent->node_degree_ - 1);
-        } else {
-          left_sibling->template transferToRight<false>(
-              node, parent, parent->node_degree_ - 1);
-        }
-        return;
-      } else {
-        if (is_leaf) {
-          parent->template mergeAt<false>(parent->node_degree_ - 1);
-        } else {
-          parent->template mergeAt<true>(parent->node_degree_ - 1);
-        }
-        node = parent;
-        nodes.pop_back();
-      }
-      is_leaf = false;
-    }
   }
 
   void removeSucc(InternalNodeTy *node, size_t height, ValueTy *pos) {
-    std::cout << "removeSucc" << std::endl;
-    llvm::SmallVector<InternalNodeTy *, 32> nodes;
+    IPQ_ASSERT(!node->isMinimal());
     for (; height < internal_height_; ++height) {
-      nodes.push_back(node);
-      node = node->children_[0];
+      node = tryMakeChildNonMinimal(node, height, 0);
     }
-    transfer(&node->values_[0], pos);
-    for (int i = 1; i < node->node_degree_; ++i) {
-      transfer(node->values_[i], node->values_[i - 1]);
-    }
+    LeafNodeTy::transfer(&node->values_[0], pos);
+    node->rangeTransferLeft(1, node->node_degree_, node, 0);
     --node->node_degree_;
-    bool is_leaf = true;
-    while (!nodes.empty()) {
-      if (node->node_degree_ >= MinNodeDegree) {
-        return;
-      }
-      InternalNodeTy *parent = nodes.back();
-      InternalNodeTy *right_sibling = parent->children_[1];
-      if (right_sibling->node_degree_ > MinNodeDegree) {
-        if (is_leaf) {
-          right_sibling->template transferToLeft<true>(node, parent, 0);
-        } else {
-          right_sibling->template transferToLeft<false>(node, parent, 0);
-        }
-        return;
-      } else {
-        if (is_leaf) {
-          parent->template mergeAt<false>(0);
-        } else {
-          parent->template mergeAt<true>(0);
-        }
-        node = parent;
-        nodes.pop_back();
-      }
-      is_leaf = false;
-    }
   }
+
   template <typename ElementTy, typename AllocTy, typename ThreeWayCompTy,
             int MinNodeDegree>
   friend class ipq::BTreeSet;
@@ -738,7 +625,7 @@ class BTreeImpl : P::LeafNodeAllocTy, P::InternalNodeAllocTy {
         root_(static_cast<InternalNodeTy *>(new LeafNodeTy)) {
     root_->node_degree_ = 0;
   }
-};
+};  // namespace internal
 }  // namespace internal
 
 template <typename ElementTy,

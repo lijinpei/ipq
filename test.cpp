@@ -7,22 +7,22 @@
 
 int main() {
   ipq::BTreeSet<std::string> btree;
-  int N = 4000;
+  int N = 400009;
   std::cout << "start btree" << std::endl;
   for (int i = 0; i < N; ++i) {
     //std::cout << "add: " << i << std::endl;
     btree.add(std::to_string(i));
     //btree.dump(std::cout);
   }
-  btree.dump(std::cout);
+  //btree.dump(std::cout);
   std::cout << "add finish" << std::endl;
   for (int i = 0; i < N + 10; ++i) {
     //std::cout << btree.find(i) << ' ';
   }
   std::cout << std::endl;
   for (int i = 0; i < N; ++i) {
-    btree.dump(std::cout);
-    std::cout << "remove: " << i << std::endl;
+    //btree.dump(std::cout);
+    //std::cout << "remove: " << i << std::endl;
     btree.remove(std::to_string(i));
   }
   std::cout << "Finish btree" << std::endl;
