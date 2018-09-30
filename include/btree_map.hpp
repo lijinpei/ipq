@@ -114,6 +114,21 @@ class BTreeMap {
     }
   }
 
+  void erase( iterator pos ) {
+    erase(pos->first);
+  }
+
+  template< class... Args >
+  std::pair<iterator,bool> emplace( Args&&... args ) {
+    value_type value(std::forward(arg)...);
+    insert(value);
+  }
+
+  template <class... Args>
+  iterator emplace_hint(const_iterator, Args&&... args ) {
+    emplace(std::forward(args)...);
+  }
+
   iterator find(const key_type &key) {
     value_type value{key, ValueTy()};
     iterator ret(btree_);
@@ -123,6 +138,8 @@ class BTreeMap {
     }
     return ret;
   }
+  iterator lower_bound( const Key& key );
+  iterator upper_bound( const Key& key );
 };
 
 template <typename KeyTy, typename ValueTy,
