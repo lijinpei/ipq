@@ -1,20 +1,10 @@
 #pragma once
 
-#include "btree_impl.hpp"
 #include <iostream>
+#include "btree_impl.hpp"
 
 namespace ipq {
 
-class DummyVector {
- public:
-   // FIXME: template parmater pack
-  template <typename... A>
-  void push_back(A...) {}
-  template <typename... A>
-  void emplace_back(A...) {}
-  template <typename... A>
-  void pop_back(A...) {}
-};
 
 template <typename ElementTy,
           typename ThreeWayCompTy =
@@ -23,7 +13,7 @@ template <typename ElementTy,
 class BTreeSet {
   using Param =
       internal::BTreeParams<MinChildDegree, ElementTy, ThreeWayCompTy, AllocTy>;
-  internal::BTreeImpl<Param> btree;
+  internal::BTreeImpl<Param> btree_;
 
  public:
   using key_type = ElementTy;
@@ -35,7 +25,8 @@ class BTreeSet {
   using reference = value_type &;
   using const_reference = const value_type &;
   using pointer = typename std::allocator_traits<allocator_type>::pointer;
-  using const_pointer = typename std::allocator_traits<allocator_type>::const_pointer;
+  using const_pointer =
+      typename std::allocator_traits<allocator_type>::const_pointer;
   using iterator = internal::BTreeIteratorImpl<Param, false, false>;
   using const_iterator = internal::BTreeIteratorImpl<Param, true, false>;
   using reverse_iterator = internal::BTreeIteratorImpl<Param, false, true>;
@@ -49,87 +40,86 @@ class BTreeSet {
   BTreeSet() : BTreeSet(ThreeWayCompTy(), AllocTy()) {}
   explicit BTreeSet(const ThreeWayCompTy &comp,
                     const AllocTy &alloc = AllocTy())
-      : btree(comp, alloc){};
+      : btree_(comp, alloc){};
   explicit BTreeSet(const AllocTy &alloc) : BTreeSet(ThreeWayCompTy(), alloc) {}
 
   iterator begin() {
+    iterator iter(btree_);
+    btree_.begin(iter.path_);
+    return iter;
   }
-  const_iterator cbegin() {
-  }
+  const_iterator cbegin() {}
   iterator end() {
+    iterator iter(btree_);
+    btree_.end(iter.path_);
+    return iter;
   }
+  /*
   const_iterator cend() {
   }
+  */
   reverse_iterator rbegin() {
+    reverse_iterator iter(btree_);
+    btree_.rbegin(iter.path_);
+    return iter;
   }
+  /*
   const_reverse_iterator crbegin() {
   }
+  */
   reverse_iterator rend() {
+    reverse_iterator iter(btree_);
+    btree_.rend(iter.path_);
+    return iter;
   }
+  /*
   const_reverse_iterator crend() {
   }
+  */
 
-  bool empty() {
-    return !size();
-  }
+  bool empty() { return !size(); }
 
-  size_type size() {
-    return btree.size();
-  }
+  size_type size() { return btree_.size(); }
 
-  void clear() {
-    btree.clear();
-  }
+  void clear() { btree_.clear(); }
 
-  void erase(const key_type & key) {
+  void erase(const key_type &key) {
     DummyVector path;
-    btree.remove(key, path);
+    btree_.remove(key, path);
   }
 
-  std::pair<iterator, bool> insert(const value_type &  value) {
-    iterator iter;
-    auto res = btree.add(value, iter.path_);
-    iter.internal_height_ = btree.internal_height_;
+  std::pair<iterator, bool> insert(const value_type &value) {
+    iterator iter(btree_);
+    auto res = btree_.add(value, iter.path_);
     return {iter, res};
   }
 
-  void swap(BTreeSet & other) {
-    btree.swap(other.btree);
-  }
+  void swap(BTreeSet &other) { btree_.swap(other.btree_); }
 
-  iterator find(const key_type & key) {
-    iterator ret;
-    auto res = btree.find(key, ret.path_);
-    ret.internal_height_ = btree.internal_height_;
+  iterator find(const key_type &key) {
+    iterator ret(btree_);
+    auto res = btree_.find(key, ret.path_);
     if (!res) {
       ret.clear();
     }
     return ret;
   }
-/*
-  const_iterator find(const key_type & key) const {
-    iterator ret;
-    auto res = btree.find(key, ret.path_);
-    ret.internal_height_ = btree.internal_height_;
-    if (!res) {
-      ret.clear();
+  /*
+    const_iterator find(const key_type & key) const {
     }
+  */
+
+  iterator lower_bound(const key_type &key) {
+    iterator ret(btree_);
+    btree_.find(key, ret.path_);
     return ret;
   }
-*/
+  /*
+    const_iterator lower_bound(const key_type & key) const {
+    }
+  */
 
-  iterator lower_bound(const key_type & key) {
-    iterator ret;
-    btree.find(key, ret.path_);
-    ret.internal_height_ = btree.internal_height_;
-    return ret;
-  }
-/*
-  const_iterator lower_bound(const key_type & key) const {
-  }
-*/
-
-  void dump(std::ostream &os) { btree.dump(os); }
+  void dump(std::ostream &os) { btree_.dump(os); }
 };
 
 }  // namespace ipq
