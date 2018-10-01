@@ -525,6 +525,9 @@ class BTreeImpl : P::LeafNodeAllocTy,
   std::size_t internal_height_, size_;
   InternalNodeTy *root_;
 
+  std::pair<DegreeCountTy, bool> nodeLowerBound(const LeafNodeTy* node, const ValueTy &target) {
+    return nodeLowerBound(*node, target);
+  }
   std::pair<DegreeCountTy, bool> nodeLowerBound(const LeafNodeTy& node, const ValueTy &target) {
     DegreeCountTy l = 0, r = node.node_degree_;
     while (r - l > BSearchThreshold) {
@@ -551,6 +554,9 @@ class BTreeImpl : P::LeafNodeAllocTy,
     return {l, false};
   }
 
+  DegreeCountTy nodeUpperBound(const LeafNodeTy* node, const ValueTy & target) {
+    return nodeUpperBound(*node, target);
+  }
   DegreeCountTy nodeUpperBound(const LeafNodeTy& node, const ValueTy & target) {
     DegreeCountTy l = 0, r = node.node_degree_;
     while (r - l + 1 > BSearchThreshold) {
@@ -564,9 +570,10 @@ class BTreeImpl : P::LeafNodeAllocTy,
     }
     while (l < r) {
       int res = this->ThreeWayCompTy::operator()(target, node.values_[r - 1]);
-      if (res <= 0) {
+      if (res >= 0) {
         break;
       }
+      --r;
     }
     return r;
   }
@@ -587,6 +594,9 @@ class BTreeImpl : P::LeafNodeAllocTy,
 
   template <typename ContTy>
   ValueTy *lowerBound(const ValueTy &target, ContTy &path) {
+    if (!size()) {
+      return nullptr;
+    }
     InternalNodeTy *p = root_;
     for (size_t i = 0; i < internal_height_; ++i) {
       auto res = nodeLowerBound(*p, target);
@@ -615,34 +625,10 @@ class BTreeImpl : P::LeafNodeAllocTy,
   }
 
   template <typename ContTy>
-  ValueTy* upperBound(const ValueTy & target, ContTy &path, InternalNodeTy* node, size_t height) {
-    DegreeCountTy idx = nodeUpperBound(node, target);
-    if (idx < node->node_degree_) {
-    } else {
-      if (height == internal_height_) {
-        return nullptr;
-      }
-    }
-    if (height == internal_height_) {
-      if (idx != node->node_degree_) {
-        path.empalce_back(node, idx);
-        return node->values_ + idx;
-      } else {
-        return nullptr;
-      }
-    } else {
-      path.emplace_back(node, idx);
-      ValueTy* ret = upperBound(target, path, node->children_[idx], height + 1);
-      if (!ret) {
-        path.pop_back();
-        return nullptr;
-      }
-      return ret;
-    }
-  }
-
-  template <typename ContTy>
   ValueTy *upperBound(const ValueTy &target, ContTy &path) {
+    if (!size()) {
+      return nullptr;
+    }
     InternalNodeTy *node = root_;
     for (size_t h = 0; h < internal_height_; ++h) {
       DegreeCountTy idx = nodeUpperBound(node, target);
@@ -752,7 +738,6 @@ class BTreeImpl : P::LeafNodeAllocTy,
       IPQ_ASSERT(!node->isFull());
       auto res = nodeLowerBound(*node, target);
       auto idx = res.first;
-      path.emplace_back(node, idx);
       if (res.second) {
         path.emplace_back(node, idx);
         return false;
@@ -786,10 +771,10 @@ class BTreeImpl : P::LeafNodeAllocTy,
       }
     }
     auto res = nodeInsert(*node, target);
+    path.emplace_back(node, res.first);
     if (!res.second) {
       return false;
     }
-    path.emplace_back(node, res.first);
     ++size_;
     return true;
   }

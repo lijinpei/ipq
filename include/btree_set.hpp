@@ -122,6 +122,11 @@ class BTreeSet {
     const_iterator lower_bound(const key_type & key) const {
     }
   */
+  iterator upper_bound(const key_type &key) {
+    iterator ret(btree_);
+    btree_.upperBound(key, ret.path_);
+    return ret;
+  }
 
   void dump(std::ostream &os) { btree_.dump(os); }
 };

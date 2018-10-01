@@ -7,7 +7,7 @@
 
 #include "btree_set.hpp"
 
-const int NMAX = 200000;
+const int NMAX = 10000000;
 
 std::random_device rd;
 
@@ -17,6 +17,17 @@ TEST(RandomInsertDelete, int) {
   std::uniform_int_distribution<int> op_dist(1, 10);
   std::uniform_int_distribution<int> value_dist(
       std::numeric_limits<int>::min());
+  auto check_iter_equal = [&](decltype(btree_set)::iterator &iter1,
+                              decltype(set)::iterator &iter2) {
+    if (iter2 == set.end()) {
+      EXPECT_EQ(iter1, btree_set.end());
+    } else {
+      EXPECT_NE(iter1, btree_set.end());
+      EXPECT_EQ(*iter1, *iter2);
+      if (*iter1 != *iter2) {
+      }
+    }
+  };
   for (int i = 0; i < NMAX; ++i) {
     int op = op_dist(rd);
     int val = value_dist(rd);
@@ -29,22 +40,34 @@ TEST(RandomInsertDelete, int) {
       case 2: {
         auto iter1 = btree_set.find(val);
         auto iter2 = set.find(val);
-        if (iter2 == set.end()) {
-          EXPECT_EQ(iter1, btree_set.end());
-        } else {
-          EXPECT_NE(iter1, btree_set.end());
-          EXPECT_EQ(*iter1, val);
-        }
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 3: {
+        auto iter1 = btree_set.lower_bound(val);
+        auto iter2 = set.lower_bound(val);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 4: {
+        break;
+        auto iter1 = btree_set.upper_bound(val);
+        auto iter2 = set.upper_bound(val);
+        check_iter_equal(iter1, iter2);
       } break;
       default: {
         auto res1 = btree_set.insert(val);
         auto res2 = set.insert(val);
         EXPECT_EQ(res1.second, res2.second);
-        if (res2.second) {
-          EXPECT_EQ(*res1.first, *res2.first);
-        }
+        check_iter_equal(res1.first, res2.first);
       }
     }
+  {
+    if (!set.empty()) {
+      int val = *set.rbegin() + 1;
+      auto iter1 = btree_set.lower_bound(val);
+      auto iter2 = set.lower_bound(val);
+      check_iter_equal(iter1, iter2);
+    }
+  }
   }
   std::cout << "size after test: " << btree_set.size() << ' ' << set.size()
             << std::endl;
@@ -77,6 +100,15 @@ TEST(RandomInsertDelete, string) {
   std::uniform_int_distribution<int> op_dist(1, 10);
   std::uniform_int_distribution<int> value_dist(
       std::numeric_limits<int>::min());
+  auto check_iter_equal = [&](decltype(btree_set)::iterator &iter1,
+                              decltype(set)::iterator &iter2) {
+    if (iter2 == set.end()) {
+      EXPECT_EQ(iter1, btree_set.end());
+    } else {
+      EXPECT_NE(iter1, btree_set.end());
+      EXPECT_EQ(*iter1, *iter2);
+    }
+  };
   for (int i = 0; i < NMAX; ++i) {
     int op = op_dist(rd);
     std::string val = std::to_string(value_dist(rd));
@@ -89,12 +121,17 @@ TEST(RandomInsertDelete, string) {
       case 2: {
         auto iter1 = btree_set.find(val);
         auto iter2 = set.find(val);
-        if (iter2 == set.end()) {
-          EXPECT_EQ(iter1, btree_set.end());
-        } else {
-          EXPECT_NE(iter1, btree_set.end());
-          EXPECT_EQ(*iter1, val);
-        }
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 3: {
+        auto iter1 = btree_set.lower_bound(val);
+        auto iter2 = set.lower_bound(val);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 4: {
+        auto iter1 = btree_set.upper_bound(val);
+        auto iter2 = set.upper_bound(val);
+        check_iter_equal(iter1, iter2);
       } break;
       default:
         auto res1 = btree_set.insert(val);
