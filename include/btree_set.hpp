@@ -92,6 +92,11 @@ class BTreeSet {
     }
   }
 
+  iterator erase(iterator pos) {
+    btree_.remove(pos.path_);
+    return pos;
+  }
+
   std::pair<iterator, bool> insert(const value_type &value) {
     iterator iter(btree_);
     auto res = btree_.add(value, iter.path_);

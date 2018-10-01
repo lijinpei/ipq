@@ -1,4 +1,5 @@
 #include <cassert>
+#include <iostream>
 #include <limits>
 #include <random>
 #include <set>
@@ -24,8 +25,6 @@ TEST(RandomInsertDelete, int) {
     } else {
       EXPECT_NE(iter1, btree_set.end());
       EXPECT_EQ(*iter1, *iter2);
-      if (*iter1 != *iter2) {
-      }
     }
   };
   for (int i = 0; i < NMAX; ++i) {
@@ -53,6 +52,16 @@ TEST(RandomInsertDelete, int) {
         auto iter2 = set.upper_bound(val);
         check_iter_equal(iter1, iter2);
       } break;
+      case 5: {
+        auto iter1 = btree_set.find(val);
+        auto iter2 = set.find(val);
+        check_iter_equal(iter1, iter2);
+        if (iter2 != set.end()) {
+          iter2 = set.erase(iter2);
+          iter1 = btree_set.erase(iter1);
+          check_iter_equal(iter1, iter2);
+        }
+      } break;
       default: {
         auto res1 = btree_set.insert(val);
         auto res2 = set.insert(val);
@@ -60,14 +69,14 @@ TEST(RandomInsertDelete, int) {
         check_iter_equal(res1.first, res2.first);
       }
     }
-  {
-    if (!set.empty()) {
-      int val = *set.rbegin() + 1;
-      auto iter1 = btree_set.lower_bound(val);
-      auto iter2 = set.lower_bound(val);
-      check_iter_equal(iter1, iter2);
+    {
+      if (!set.empty()) {
+        int val = *set.rbegin() + 1;
+        auto iter1 = btree_set.lower_bound(val);
+        auto iter2 = set.lower_bound(val);
+        check_iter_equal(iter1, iter2);
+      }
     }
-  }
   }
   std::cout << "size after test: " << btree_set.size() << ' ' << set.size()
             << std::endl;
@@ -133,13 +142,21 @@ TEST(RandomInsertDelete, string) {
         auto iter2 = set.upper_bound(val);
         check_iter_equal(iter1, iter2);
       } break;
+      case 5: {
+        auto iter1 = btree_set.find(val);
+        auto iter2 = set.find(val);
+        check_iter_equal(iter1, iter2);
+        if (iter2 != set.end()) {
+          iter2 = set.erase(iter2);
+          iter1 = btree_set.erase(iter1);
+          check_iter_equal(iter1, iter2);
+        }
+      } break;
       default:
         auto res1 = btree_set.insert(val);
         auto res2 = set.insert(val);
         EXPECT_EQ(res1.second, res2.second);
-        if (res2.second) {
-          EXPECT_EQ(*res1.first, *res2.first);
-        }
+        check_iter_equal(res1.first, res2.first);
     }
   }
   std::cout << "size after test: " << btree_set.size() << ' ' << set.size()

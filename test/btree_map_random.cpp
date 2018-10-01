@@ -1,13 +1,14 @@
 #include <cassert>
+#include <iostream>
 #include <limits>
-#include <random>
 #include <map>
+#include <random>
 #include <string>
 #include "gtest/gtest.h"
 
 #include "btree_map.hpp"
 
-const int NMAX = 200000;
+const int NMAX = 10000000;
 
 std::random_device rd;
 
@@ -17,6 +18,16 @@ TEST(RandomInsertDelete, int) {
   std::uniform_int_distribution<int> op_dist(1, 10);
   std::uniform_int_distribution<int> value_dist(
       std::numeric_limits<int>::min());
+  auto check_iter_equal = [&](decltype(btree_map)::iterator &iter1,
+                              decltype(map)::iterator &iter2) {
+    if (iter2 == map.end()) {
+      EXPECT_EQ(iter1, btree_map.end());
+    } else {
+      EXPECT_NE(iter1, btree_map.end());
+      EXPECT_EQ(iter1->first, iter2->first);
+      EXPECT_EQ(iter1->second, iter2->second);
+    }
+  };
   for (int i = 0; i < NMAX; ++i) {
     int op = op_dist(rd);
     int val = value_dist(rd);
@@ -29,12 +40,27 @@ TEST(RandomInsertDelete, int) {
       case 2: {
         auto iter1 = btree_map.find(val);
         auto iter2 = map.find(val);
-        if (iter2 == map.end()) {
-          EXPECT_EQ(iter1, btree_map.end());
-        } else {
-          EXPECT_NE(iter1, btree_map.end());
-          EXPECT_EQ(iter1->first, iter2->first);
-          EXPECT_EQ(iter1->second, iter2->second);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 3: {
+        auto iter1 = btree_map.lower_bound(val);
+        auto iter2 = map.lower_bound(val);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 4: {
+        break;
+        auto iter1 = btree_map.upper_bound(val);
+        auto iter2 = map.upper_bound(val);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 5: {
+        auto iter1 = btree_map.find(val);
+        auto iter2 = map.find(val);
+        check_iter_equal(iter1, iter2);
+        if (iter2 != map.end()) {
+          iter2 = map.erase(iter2);
+          iter1 = btree_map.erase(iter1);
+          check_iter_equal(iter1, iter2);
         }
       } break;
       default: {
@@ -43,11 +69,16 @@ TEST(RandomInsertDelete, int) {
         auto res1 = btree_map.insert(ins_val);
         auto res2 = map.insert(ins_val);
         EXPECT_EQ(res1.second, res2.second);
-        if (res2.second) {
-          EXPECT_EQ(res1.first->first, res2.first->first);
-          EXPECT_EQ(res1.first->second, res2.first->second);
-        }
+        check_iter_equal(res1.first, res2.first);
       }
+    }
+  }
+  {
+    if (!map.empty()) {
+      int val = map.rbegin()->first + 1;
+      auto iter1 = btree_map.lower_bound(val);
+      auto iter2 = map.lower_bound(val);
+      check_iter_equal(iter1, iter2);
     }
   }
   std::cout << "size after test: " << btree_map.size() << ' ' << map.size()
@@ -83,6 +114,16 @@ TEST(RandomInsertDelete, string) {
   std::uniform_int_distribution<int> op_dist(1, 10);
   std::uniform_int_distribution<int> value_dist(
       std::numeric_limits<int>::min());
+  auto check_iter_equal = [&](decltype(btree_map)::iterator &iter1,
+                              decltype(map)::iterator &iter2) {
+    if (iter2 == map.end()) {
+      EXPECT_EQ(iter1, btree_map.end());
+    } else {
+      EXPECT_NE(iter1, btree_map.end());
+      EXPECT_EQ(iter1->first, iter2->first);
+      EXPECT_EQ(iter1->second, iter2->second);
+    }
+  };
   for (int i = 0; i < NMAX; ++i) {
     int op = op_dist(rd);
     std::string val = std::to_string(value_dist(rd));
@@ -95,12 +136,26 @@ TEST(RandomInsertDelete, string) {
       case 2: {
         auto iter1 = btree_map.find(val);
         auto iter2 = map.find(val);
-        if (iter2 == map.end()) {
-          EXPECT_EQ(iter1, btree_map.end());
-        } else {
-          EXPECT_NE(iter1, btree_map.end());
-          EXPECT_EQ(iter1->first, iter2->first);
-          EXPECT_EQ(iter1->second, iter2->second);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 3: {
+        auto iter1 = btree_map.lower_bound(val);
+        auto iter2 = map.lower_bound(val);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 4: {
+        auto iter1 = btree_map.upper_bound(val);
+        auto iter2 = map.upper_bound(val);
+        check_iter_equal(iter1, iter2);
+      } break;
+      case 5: {
+        auto iter1 = btree_map.find(val);
+        auto iter2 = map.find(val);
+        check_iter_equal(iter1, iter2);
+        if (iter2 != map.end()) {
+          iter2 = map.erase(iter2);
+          iter1 = btree_map.erase(iter1);
+          check_iter_equal(iter1, iter2);
         }
       } break;
       default: {
@@ -109,10 +164,7 @@ TEST(RandomInsertDelete, string) {
         auto res1 = btree_map.insert(ins_val);
         auto res2 = map.insert(ins_val);
         EXPECT_EQ(res1.second, res2.second);
-        if (res2.second) {
-          EXPECT_EQ(res1.first->first, res2.first->first);
-          EXPECT_EQ(res1.first->second, res2.first->second);
-        }
+        check_iter_equal(res1.first, res2.first);
       }
     }
   }

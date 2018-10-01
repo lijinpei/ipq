@@ -114,8 +114,9 @@ class BTreeMap {
     }
   }
 
-  void erase( iterator pos ) {
-    erase(pos->first);
+  iterator erase(iterator pos) {
+    btree_.remove(pos.path_);
+    return pos;
   }
 
   template< class... Args >
@@ -138,8 +139,18 @@ class BTreeMap {
     }
     return ret;
   }
-  iterator lower_bound( const key_type& key );
-  iterator upper_bound( const key_type& key );
+  iterator lower_bound( const key_type& key ) {
+    value_type value{key, ValueTy()};
+    iterator ret(btree_);
+    btree_.lowerBound(value, ret.path_);
+    return ret;
+  }
+  iterator upper_bound( const key_type& key ) {
+    value_type value{key, ValueTy()};
+    iterator ret(btree_);
+    btree_.upperBound(value, ret.path_);
+    return ret;
+  }
 };
 
 template <typename KeyTy, typename ValueTy,

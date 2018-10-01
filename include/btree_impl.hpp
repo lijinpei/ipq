@@ -15,7 +15,7 @@ namespace ipq {
 
 class DummyVector {
  public:
-  // FIXME: template parmater pack
+  // FIXME: rvalue reference template parmater pack?
   template <typename... A>
   void push_back(A...) {}
   template <typename... A>
@@ -332,7 +332,7 @@ struct InternalNode : LeafNode<P> {
    */
   template <bool WithChildren>
   void mergeChildrenAt(DegreeCountTy idx) {
-    assert(idx < this->node_degree_);
+    IPQ_ASSERT(idx < this->node_degree_);
     InternalNode *left_child = children_[idx],
                  *right_child = children_[idx + 1];
     IPQ_ASSERT(left_child->node_degree_ == MinNodeDegree);
@@ -483,9 +483,9 @@ class BTreeIteratorImpl {
   }
   BTreeIteratorImpl &operator--() {
     if constexpr (IsReverse) {
-      next_path<P>(path_);
+      next_path<P>(path_, btree_->internal_height_);
     } else {
-      prev_path<P>(path_);
+      prev_path<P>(path_, btree_->internal_height_);
     }
     return *this;
   }
@@ -693,7 +693,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
   template <typename ConTy>
   InternalNodeTy *tryMakeChildNonMinimal(InternalNodeTy *parent,
                                          size_t &parent_height,
-                                         DegreeCountTy idx, ConTy &path) {
+                                         DegreeCountTy & idx, DegreeCountTy& child_idx, ConTy &path) {
     IPQ_ASSERT(parent == root_ || !parent->isMinimal());
     InternalNodeTy *child = parent->children_[idx];
     if (!child->isMinimal()) {
@@ -702,6 +702,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
     if (idx) {
       if (InternalNodeTy *left_child = parent->children_[idx - 1];
           !left_child->isMinimal()) {
+        ++child_idx;
         if (parent_height + 1 < internal_height_) {
           left_child->template transferOneToRightSibling<true>(child, parent,
                                                                idx - 1);
@@ -726,8 +727,11 @@ class BTreeImpl : P::LeafNodeAllocTy,
         return child;
       }
     }
-    DegreeCountTy idx1 = idx ? idx - 1 : idx;
-    return mergeChildrenAt(parent, idx1, parent_height, path);
+    if (idx) {
+      --idx;
+      child_idx += MinNodeDegree + 1;
+    }
+    return mergeChildrenAt(parent, idx, parent_height, path);
   }
 
   template <typename ContTy>
@@ -800,6 +804,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
   template <typename ContTy>
   bool remove(const ValueTy &target, ContTy &path) {
     InternalNodeTy *node = root_;
+    DegreeCountTy dummy_child_idx;
     IPQ_ASSERT(node);
     for (size_t height = 0; height < internal_height_; ++height) {
       auto res = nodeLowerBound(*node, target);
@@ -826,13 +831,14 @@ class BTreeImpl : P::LeafNodeAllocTy,
           node = new_child;
         }
       } else {
-        auto new_child = tryMakeChildNonMinimal(node, height, idx, path);
+        auto new_child = tryMakeChildNonMinimal(node, height, idx, dummy_child_idx, path);
         path.emplace_back(node, res.second);
         node = new_child;
       }
       IPQ_ASSERT(!node->isMinimal());
     }
     auto res = nodeLowerBound(*node, target);
+    path.emplace_back(node, res.second);
     if (res.second) {
       node->leafRemove(res.first);
       --size_;
@@ -843,11 +849,64 @@ class BTreeImpl : P::LeafNodeAllocTy,
   }
 
   template <typename ContTy>
+  void remove(ContTy &path) {
+    IPQ_ASSERT(root_);
+    IPQ_ASSERT(path.size());
+    IPQ_ASSERT(path[0].first == root_);
+    ContTy old_path;
+    using std::swap;
+    swap(old_path, path);
+    InternalNodeTy *node = root_;
+    DegreeCountTy idx = old_path[0].second;
+    size_t height = 0;
+    for (size_t old_height = 0; old_height  + 1 < old_path.size(); ++height, ++old_height) {
+      DegreeCountTy child_idx = old_path[old_height + 1].second;
+      path.emplace_back(node, idx);
+      InternalNodeTy* child_node = tryMakeChildNonMinimal(node, height, path.back().second, child_idx, path);
+      node = child_node;
+      idx = child_idx;
+    }
+    for (; height < internal_height_; ++height) {
+      InternalNodeTy *left_node = node->children_[idx];
+      if (left_node->node_degree_ > MinNodeDegree) {
+        node->values_[idx].~ValueTy();
+        path.emplace_back(node, idx);
+        removePrec(left_node, height + 1, &node->values_[idx], path);
+        next_path<P>(path, internal_height_);
+        --size_;
+        return;
+      } else if (InternalNodeTy *right_node = node->children_[idx + 1];
+                 right_node->node_degree_ > MinNodeDegree) {
+        node->values_[idx].~ValueTy();
+        path.emplace_back(node, idx);
+        removeSucc(right_node, height + 1, &node->values_[idx], path);
+        --size_;
+        return;
+      } else {
+        InternalNodeTy *new_child = mergeChildrenAt(node, idx, height, path);
+        path.emplace_back(node, idx);
+        node = new_child;
+        idx = MinNodeDegree;
+      }
+    }
+    path.emplace_back(node, idx);
+    node->leafRemove(idx);
+    --size_;
+    if (idx == node->node_degree_) {
+      --path.back().second;
+      next_path<P>(path, internal_height_);
+    }
+    return;
+  }
+
+  template <typename ContTy>
   void removePrec(InternalNodeTy *node, size_t height, ValueTy *pos,
                   ContTy &path) {
+    DegreeCountTy dummy_child_idx;
     IPQ_ASSERT(node == root_ || !node->isMinimal());
     for (; height < internal_height_; ++height) {
-      node = tryMakeChildNonMinimal(node, height, node->node_degree_, path);
+      DegreeCountTy idx = node->node_degree_;
+      node = tryMakeChildNonMinimal(node, height, idx, dummy_child_idx, path);
     }
     LeafNodeTy::transfer(node->values_ + node->node_degree_ - 1, pos);
     --node->node_degree_;
@@ -856,9 +915,11 @@ class BTreeImpl : P::LeafNodeAllocTy,
   template <typename ContTy>
   void removeSucc(InternalNodeTy *node, size_t height, ValueTy *pos,
                   ContTy &path) {
+    DegreeCountTy dummy_child_idx;
     IPQ_ASSERT(!node->isMinimal());
     for (; height < internal_height_; ++height) {
-      node = tryMakeChildNonMinimal(node, height, 0, path);
+      DegreeCountTy idx = 0;
+      node = tryMakeChildNonMinimal(node, height, idx, dummy_child_idx, path);
     }
     LeafNodeTy::transfer(&node->values_[0], pos);
     node->rangeTransferLeft(1, node->node_degree_, node, 0);

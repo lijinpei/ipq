@@ -8,6 +8,7 @@ macro(my_add_test name)
 add_executable(${name} "${name}.cpp")
 list(APPEND test_list ${name})
 target_link_libraries(${name} ${GTEST_BOTH_LIBRARIES})
+SET_TARGET_PROPERTIES(${name} PROPERTIES COMPILE_FLAGS "-O3")
 add_test(${name} ${name})
 endmacro()
 
