@@ -138,15 +138,18 @@ struct LeafNode {
     }
     return {l, false};
   }
-  DegreeCountTy leafInsert(const ValueTy &value) {
+  std::pair<DegreeCountTy, bool> leafInsert(const ValueTy &value) {
     auto res = lower_bound(value);
     DegreeCountTy idx = res.first;
+    if (res.second) {
+      return {idx, false};
+    }
     for (auto i = node_degree_ - 1; i >= idx; --i) {
       transfer(values_[i], values_[i + 1]);
     }
     ++node_degree_;
     new (values_ + idx) ValueTy(value);
-    return idx;
+    return {idx, true};
   }
 
   /* transfer() functions move construct value from from to to, and destruct
@@ -715,8 +718,11 @@ class BTreeImpl : P::LeafNodeAllocTy,
         }
       }
     }
-    DegreeCountTy idx = node->leafInsert(target);
-    path.emplace_back(node, idx);
+    auto res = node->leafInsert(target);
+    if (!res.second) {
+      return false;
+    }
+    path.emplace_back(node, res.first);
     ++size_;
     return true;
   }

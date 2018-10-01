@@ -120,7 +120,7 @@ class BTreeMap {
 
   template< class... Args >
   std::pair<iterator,bool> emplace( Args&&... args ) {
-    value_type value(std::forward(arg)...);
+    value_type value(std::forward(args)...);
     insert(value);
   }
 
@@ -138,8 +138,8 @@ class BTreeMap {
     }
     return ret;
   }
-  iterator lower_bound( const Key& key );
-  iterator upper_bound( const Key& key );
+  iterator lower_bound( const key_type& key );
+  iterator upper_bound( const key_type& key );
 };
 
 template <typename KeyTy, typename ValueTy,

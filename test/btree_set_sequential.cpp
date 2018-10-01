@@ -1,7 +1,8 @@
 #include <set>
 #include <string>
-#include "btree_set.hpp"
 #include "gtest/gtest.h"
+
+#include "btree_set.hpp"
 
 const int NMAX = 20000;
 

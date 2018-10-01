@@ -83,9 +83,13 @@ class BTreeSet {
 
   void clear() { btree_.clear(); }
 
-  void erase(const key_type &key) {
+  size_t erase(const key_type &key) {
     DummyVector path;
-    btree_.remove(key, path);
+    if (btree_.remove(key, path)) {
+      return 1;
+    } else {
+      return 0;
+    }
   }
 
   std::pair<iterator, bool> insert(const value_type &value) {
