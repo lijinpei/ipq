@@ -132,7 +132,7 @@ class BTreeMap {
   iterator find(const key_type &key) {
     value_type value{key, ValueTy()};
     iterator ret(btree_);
-    auto res = btree_.find(value, ret.path_);
+    auto res = btree_.lowerBound(value, ret.path_);
     if (!res) {
       ret.clear();
     }

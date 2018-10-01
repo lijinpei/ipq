@@ -99,58 +99,12 @@ struct LeafNode {
   enum {
     MaxNodeDegree = P::MaxNodeDegree,
     MinNodeDegree = P::MinNodeDegree,
-    BSearchThreshold = P::BSearchThreshold
   };
   DegreeCountTy node_degree_;
   ValueTy values_[MaxNodeDegree];
   bool isFull() { return node_degree_ == MaxNodeDegree; }
   bool isMinimal() { return node_degree_ == MinNodeDegree; }
 
-  /* if ret.second == true, then ret.first >= 0 and ret.first <
-   * node.node_degree_, ret.first is the index of one of the elements in
-   * node.values_ that is equal to target if ret.second == false, then ret.first
-   * >= 0 and ret.first <= node.node_degree_, ret.first is then index of the
-   * first element that is larger than (or equal to) target, if no such element,
-   * ret.first == node.node_degree_
-   */
-  std::pair<DegreeCountTy, bool> lower_bound(const ValueTy &target) const {
-    DegreeCountTy l = 0, r = node_degree_;
-    while (r - l > BSearchThreshold) {
-      int m = (r - l) / 2 + l;
-      int res = ThreeWayCompTy{}(target, values_[m]);
-      if (res == 0) {
-        return {m, true};
-      } else if (res < 0) {
-        r = m;
-      } else {
-        l = m + 1;
-      }
-    }
-    while (l < r) {
-      int res = ThreeWayCompTy{}(target, values_[l]);
-      if (!res) {
-        return {l, true};
-      }
-      if (res < 0) {
-        break;
-      }
-      ++l;
-    }
-    return {l, false};
-  }
-  std::pair<DegreeCountTy, bool> leafInsert(const ValueTy &value) {
-    auto res = lower_bound(value);
-    DegreeCountTy idx = res.first;
-    if (res.second) {
-      return {idx, false};
-    }
-    for (auto i = node_degree_ - 1; i >= idx; --i) {
-      transfer(values_[i], values_[i + 1]);
-    }
-    ++node_degree_;
-    new (values_ + idx) ValueTy(value);
-    return {idx, true};
-  }
 
   /* transfer() functions move construct value from from to to, and destruct
    * value at form
@@ -564,17 +518,78 @@ class BTreeImpl : P::LeafNodeAllocTy,
     MaxNodeDegree = P::MaxNodeDegree,
     MinChildDegree = P::MinChildDegree,
     MaxChildDegree = P::MaxChildDegree,
+    BSearchThreshold = P::BSearchThreshold
   };
 
   // height of internal nodes
   std::size_t internal_height_, size_;
   InternalNodeTy *root_;
 
+  std::pair<DegreeCountTy, bool> nodeLowerBound(const LeafNodeTy& node, const ValueTy &target) {
+    DegreeCountTy l = 0, r = node.node_degree_;
+    while (r - l > BSearchThreshold) {
+      int m = (r - l) / 2 + l;
+      int res = this->ThreeWayCompTy::operator()(target, node.values_[m]);
+      if (res == 0) {
+        r = m + 1;
+      } else if (res < 0) {
+        r = m;
+      } else {
+        l = m + 1;
+      }
+    }
+    while (l < r) {
+      int res = this->ThreeWayCompTy::operator()(target, node.values_[l]);
+      if (!res) {
+        return {l, true};
+      }
+      if (res < 0) {
+        break;
+      }
+      ++l;
+    }
+    return {l, false};
+  }
+
+  DegreeCountTy nodeUpperBound(const LeafNodeTy& node, const ValueTy & target) {
+    DegreeCountTy l = 0, r = node.node_degree_;
+    while (r - l + 1 > BSearchThreshold) {
+      int m = (r + 1 - l) / 2 + l;
+      int res = this->ThreeWayCompTy::operator()(target, node.values_[m]);
+      if (res <= 0) {
+        l = m + 1;
+      } else {
+        r = m;
+      }
+    }
+    while (l < r) {
+      int res = this->ThreeWayCompTy::operator()(target, node.values_[r - 1]);
+      if (res <= 0) {
+        break;
+      }
+    }
+    return r;
+  }
+
+  std::pair<DegreeCountTy, bool> nodeInsert(LeafNodeTy& node, const ValueTy &value) {
+    auto res = nodeLowerBound(node, value);
+    DegreeCountTy idx = res.first;
+    if (res.second) {
+      return {idx, false};
+    }
+    for (auto i = node.node_degree_ - 1; i >= idx; --i) {
+      LeafNodeTy::transfer(node.values_[i], node.values_[i + 1]);
+    }
+    ++node.node_degree_;
+    new (node.values_ + idx) ValueTy(value);
+    return {idx, true};
+  }
+
   template <typename ContTy>
-  ValueTy *find(const ValueTy &target, ContTy &path) {
+  ValueTy *lowerBound(const ValueTy &target, ContTy &path) {
     InternalNodeTy *p = root_;
     for (size_t i = 0; i < internal_height_; ++i) {
-      auto res = p->lower_bound(target);
+      auto res = nodeLowerBound(*p, target);
       auto idx = res.first;
       path.emplace_back(p, idx);
       if (res.second) {
@@ -583,7 +598,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
         p = p->children_[idx];
       }
     }
-    auto res = p->lower_bound(target);
+    auto res = nodeLowerBound(*p, target);
     auto idx = res.first;
     if (res.second) {
       path.emplace_back(p, idx);
@@ -596,6 +611,58 @@ class BTreeImpl : P::LeafNodeAllocTy,
         path.emplace_back(p, idx);
       }
       return nullptr;
+    }
+  }
+
+  template <typename ContTy>
+  ValueTy* upperBound(const ValueTy & target, ContTy &path, InternalNodeTy* node, size_t height) {
+    DegreeCountTy idx = nodeUpperBound(node, target);
+    if (idx < node->node_degree_) {
+    } else {
+      if (height == internal_height_) {
+        return nullptr;
+      }
+    }
+    if (height == internal_height_) {
+      if (idx != node->node_degree_) {
+        path.empalce_back(node, idx);
+        return node->values_ + idx;
+      } else {
+        return nullptr;
+      }
+    } else {
+      path.emplace_back(node, idx);
+      ValueTy* ret = upperBound(target, path, node->children_[idx], height + 1);
+      if (!ret) {
+        path.pop_back();
+        return nullptr;
+      }
+      return ret;
+    }
+  }
+
+  template <typename ContTy>
+  ValueTy *upperBound(const ValueTy &target, ContTy &path) {
+    InternalNodeTy *node = root_;
+    for (size_t h = 0; h < internal_height_; ++h) {
+      DegreeCountTy idx = nodeUpperBound(node, target);
+      path.emplace_back(node, idx);
+      node = node->children_[idx];
+    }
+    DegreeCountTy idx = nodeUpperBound(node, target);
+    if (idx < node->node_degree_) {
+      path.emplace_back(node, idx);
+      return node->values_ + idx;
+    } else {
+      while (!path.empty() &&
+             path.back().second == path.back().first->node_degree_) {
+        path.pop_back();
+      }
+      if (path.empty()) {
+        return nullptr;
+      } else {
+        return path.back().first->values_ + path.back().second;
+      }
     }
   }
 
@@ -683,7 +750,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
     InternalNodeTy *node = root_;
     for (size_t height = 0; height < internal_height_; ++height) {
       IPQ_ASSERT(!node->isFull());
-      auto res = node->lower_bound(target);
+      auto res = nodeLowerBound(*node, target);
       auto idx = res.first;
       path.emplace_back(node, idx);
       if (res.second) {
@@ -718,7 +785,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
         }
       }
     }
-    auto res = node->leafInsert(target);
+    auto res = nodeInsert(*node, target);
     if (!res.second) {
       return false;
     }
@@ -750,7 +817,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
     InternalNodeTy *node = root_;
     IPQ_ASSERT(node);
     for (size_t height = 0; height < internal_height_; ++height) {
-      auto res = node->lower_bound(target);
+      auto res = nodeLowerBound(*node, target);
       auto idx = res.first;
       InternalNodeTy *left_node = node->children_[idx];
       if (res.second) {
@@ -780,7 +847,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
       }
       IPQ_ASSERT(!node->isMinimal());
     }
-    auto res = node->lower_bound(target);
+    auto res = nodeLowerBound(*node, target);
     if (res.second) {
       node->leafRemove(res.first);
       --size_;

@@ -102,7 +102,7 @@ class BTreeSet {
 
   iterator find(const key_type &key) {
     iterator ret(btree_);
-    auto res = btree_.find(key, ret.path_);
+    auto res = btree_.lowerBound(key, ret.path_);
     if (!res) {
       ret.clear();
     }
@@ -115,7 +115,7 @@ class BTreeSet {
 
   iterator lower_bound(const key_type &key) {
     iterator ret(btree_);
-    btree_.find(key, ret.path_);
+    btree_.lowerBound(key, ret.path_);
     return ret;
   }
   /*
