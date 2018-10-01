@@ -9,7 +9,7 @@ namespace ipq {
 template <typename ElementTy,
           typename ThreeWayCompTy =
               ThreeWayCompAdaptor<ElementTy, std::less<ElementTy>>,
-          typename AllocTy = std::allocator<ElementTy>, int MinChildDegree = 4>
+          typename AllocTy = std::allocator<ElementTy>, int MinChildDegree = 32>
 class BTreeSet {
   using Param =
       internal::BTreeParams<MinChildDegree, ElementTy, ThreeWayCompTy, AllocTy>;
@@ -112,6 +112,12 @@ class BTreeSet {
       ret.clear();
     }
     return ret;
+  }
+
+  size_t count(const key_type &key) {
+    DummyVector vec;
+    auto res = btree_.lowerBound(key, vec);
+    return res ? 1 : 0;
   }
   /*
     const_iterator find(const key_type & key) const {

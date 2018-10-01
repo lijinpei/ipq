@@ -48,7 +48,6 @@ TEST(RandomInsertDelete, int) {
         check_iter_equal(iter1, iter2);
       } break;
       case 4: {
-        break;
         auto iter1 = btree_map.upper_bound(val);
         auto iter2 = map.upper_bound(val);
         check_iter_equal(iter1, iter2);

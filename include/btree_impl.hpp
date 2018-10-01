@@ -559,13 +559,13 @@ class BTreeImpl : P::LeafNodeAllocTy,
   }
   DegreeCountTy nodeUpperBound(const LeafNodeTy& node, const ValueTy & target) {
     DegreeCountTy l = 0, r = node.node_degree_;
-    while (r - l + 1 > BSearchThreshold) {
-      int m = (r + 1 - l) / 2 + l;
+    while (r - l > BSearchThreshold) {
+      int m = (r - l) / 2 + l;
       int res = this->ThreeWayCompTy::operator()(target, node.values_[m]);
-      if (res <= 0) {
-        l = m + 1;
-      } else {
+      if (res < 0) {
         r = m;
+      } else {
+        l = m + 1;
       }
     }
     while (l < r) {
