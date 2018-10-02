@@ -1,21 +1,24 @@
 #pragma once
 
+#include <memory>
+
 namespace ipq {
 
 template <typename ValueTy>
 struct SegmentTreeTrait {
   /*
-  stiatc void initialNonExist(ValueTy* storage, size_t size);
-  static bool isUnmarkValue(ValueTy* storage);
-  static bool isNonExistValue(ValueTy* storage);
-  static bool copyUnmarkValue(ValueTy* val);
-  static bool copyNonExistValue(ValueTy* val);
+  static void initialNonExist(ValueTy* storage, size_t size);
+  static bool isUnmarkValue(const ValueTy& storage);
+  static bool isNonExistValue(const ValueTy& storage);
+  static void copyUnmarkValue(ValueTy& val);
+  static void copyNonExistValue(ValueTy& val);
   static ValueTy getNonExitValue();
    */
 };
 
 template <typename ValueTy, typename AllocTy = std::allocator<ValueTy>>
-class SegmentTree : AllocTy::rebind(ValueTy)::type, SegmentTreeTrait<ValueTy>{
+class SegmentTree : AllocTy::template rebind<ValueTy>::other {
+  using Trait = SegmentTreeTrait<ValueTy>;
   size_t left_edge_, right_edge_;
   ValueTy* storage_;
 
@@ -35,26 +38,34 @@ class SegmentTree : AllocTy::rebind(ValueTy)::type, SegmentTreeTrait<ValueTy>{
     return leftMiddle(left, right) + 1;
   }
 
-  static void populateMark(ValueTy& parent_mark, ValueTy& child_mark) {
-    if (isUnmarkValue(parent) && !isUnmarkValue(child_mark)) {
-      parent_mark = child_mark;
-    } else if (!isUnmarkValue(parent)) {
-      child_mark = parent_mark;
+  void downMarkLeft(ValueTy & parent_mark, size_t pos) {
+    if (Trait::isUnmarkValue(parent_mark)) {
+      parent_mark = storage_[leftChild(pos)];
+    } else {
+      size_t lc = leftChild(pos), rc = rightChild(pos);
+      storage_[lc] = storage_[rc] = parent_mark;
     }
   }
 
-  bool populateMarkToChildren(ValueTy & parent_mark, size_t pos) {
-    if (isUnmarkValue(parent_mark)) {
-      return false;
+  void downMarkRight(ValueTy & parent_mark, size_t pos) {
+    if (Trait::isUnmarkValue(parent_mark)) {
+      parent_mark = storage_[rightChild(pos)];
+    } else {
+      size_t lc = leftChild(pos), rc = rightChild(pos);
+      storage_[lc] = storage_[rc] = parent_mark;
     }
-    storage_[leftChild(pos)] = parent_mark;
-    storage_[leftChild(pos)] = parent_mark;
-    return true;
+  }
+
+  void downMark(const ValueTy &parent_mark, size_t pos) {
+    if (!Trait::isUnmarkValue(parent_mark)) {
+      size_t lc = leftChild(pos), rc = rightChild(pos);
+      storage_[lc] = storage_[rc] = parent_mark;
+    }
   }
 
  public:
-  SegmentTree(size_t left, size_t right, AllocTy& alloc)
-      : AllocTy(alloc), left_edge(left), right_edge(right) {
+  SegmentTree(size_t left, size_t right, const AllocTy& alloc = std::allocator<ValueTy>())
+      : AllocTy(alloc), left_edge_(left), right_edge_(right) {
     size_t s = 2 * size();
     storage_ = this->AllocTy::allocate(s);
     Trait::initialNonExist(storage_, s);
@@ -66,59 +77,36 @@ class SegmentTree : AllocTy::rebind(ValueTy)::type, SegmentTreeTrait<ValueTy>{
    */
   const ValueTy* find(size_t point) {
     size_t pos = 0, left = left_edge_, right = right_edge_;
-    ValueTy mark = getUnmarkValue();
+    ValueTy mark = Trait::getUnmarkValue();
     while (left < right) {
-      populateMark(mark, storage_[pos]);
-      if (!isUnmarkValue(mark)) {
+      if (!Trait::isUnmarkValue(mark)) {
         break;
       } else {
         size_t middle = leftMiddle(left, right);
         if (point <= middle) {
+          downMarkLeft(mark, pos);
           pos = leftChild(pos);
           right = middle;
         } else {
+          downMarkRight(mark, pos);
           pos = rightChild(pos);
           left = middle + 1;
         }
       }
     }
-    if (isNonExistValue(mark)) {
-      return {};
+    if (Trait::isNonExistValue(mark)) {
+      return nullptr;
     } else {
-      return mark;
-    }
-  }
-
-  const ValueTy* rangeFind(size_t left, size_t right) {
-    size_t pos = 0, left = left_edge_, right = right_edge_;
-    ValueTy mark = getUnmarkValue();
-    while (left < right) {
-      populateMark(mark, storage_[pos]);
-      if (!isUnmarkValue(mark)) {
-        if (isNonExistValue(mark)) {
-          return nullptr;
-        } else {
-          return &storage_[pos];
-        }
-      } else {
-        size_t middle = leftMiddle(left, right);
-        if (point <= middle) {
-          pos = leftChild(pos);
-          right = middle;
-        } else {
-          pos = rightChild(pos);
-          left = middle + 1;
-        }
-      }
+      return storage_ + pos;
     }
   }
 
   void remove(size_t left, size_t right) {
-    update(left, right, getNonExitValue());
+    update(left, right, Trait::getNonExitValue());
   }
 
   void update(size_t left, size_t right, const ValueTy& val) {
-    size_t left_edge = left_edge, right_edge = right_edge_, pos = 0;
+    size_t left_edge = left_edge_, right_edge = right_edge_, pos = 0;
     if (left == left_edge && right == right_edge) {
       storage_[0] = val;
       return;
@@ -127,18 +115,12 @@ class SegmentTree : AllocTy::rebind(ValueTy)::type, SegmentTreeTrait<ValueTy>{
     while (left_edge < right_edge) {
       size_t middle = leftMiddle(left_edge, right_edge);
       if (left > middle) {
-        size_t rc = rightChild(pos);
-        if (populateMarkToChildren(mark, pos)) {
-          mark = storage_[rc];
-        }
-        pos = rc;
+        downMarkRight(mark, pos);
+        pos = rightChild(pos);
         left_edge = middle + 1;
       } else if (right <= middle) {
-        size_t lc = leftChild(pos);
-        if (populateMarkToChildren(mark, pos)) {
-          mark = storage_[lc];
-        }
-        pos = lc;
+        downMarkRight(mark, pos);
+        pos = leftChild(pos);
         right_edge = middle;
       } else {
         break;
@@ -148,67 +130,47 @@ class SegmentTree : AllocTy::rebind(ValueTy)::type, SegmentTreeTrait<ValueTy>{
       storage_[pos] = val;
       return;
     }
-    populateMarkToChildren(mark, pos);
-    {
-      size_t middle = leftMiddle(left_edge, right_edge), lpos = leftChild(pos);
-      size_t le = left_edge, re = middle;
-      ValueTy mark = storage_[lpos];
+    downMark(mark, pos);
+    size_t middle = leftMiddle(left_edge, right_edge);
+    auto leftPartialUpdate = [&](size_t pos, size_t le, size_t re) {
+      ValueTy mark = storage_[pos];
       while (le < re) {
-        middle = leftMiddle(le, re);
-        if (left == middle + 1) {
-          storage_[rightChild(lpos] = val;
-          break;
-        } else if (left <= middle) {
-          size_t lc = leftChild(lpos);
-          if (populateMarkToChildren(mark, lpos)) {
-            mark = storage_[lc];
-          }
-          storage_[rightChild(lpos)] = val;
+        downMark(mark, pos);
+        size_t middle = leftMiddle(le, re);
+        if (left <= middle) {
+          storage_[rightChild(pos)] = val;
           re = middle;
-          lpos = lc;
+          pos = leftChild(pos);
         } else {
-          size_t rc = rightChild(lpos);
-          if (populateMarkToChildren(mark, lpos)) {
-            mark = storage_[rc];
-          }
           le = middle + 1;
-          lpos = rc;
+          pos = rightChild(pos);
         }
       }
       if (le == re) {
-        storage_[lpos] = val;
+        storage_[pos] = val;
       }
-    }
-    {
-      size_t middle = rightMiddle(left_edge, right_edge), rpos = rightChild(pos);
-      size_t le = middle, re = right;
-      ValueTy mark = storage_[rpos];
+    };
+
+    auto rightPartialUpdate = [&](size_t pos, size_t le, size_t re) {
+      ValueTy mark = storage_[pos];
       while (le < re) {
-        middle = leftMiddle(le, re);
-        if (right == middle) {
-          storage_[rightChild(rpos)] = val;
-          break;
-        } else if (right < middle) {
-          size_t lc = leftChild(rpos);
-          if (populateMarkToChildren(mark, rpos)) {
-            mark = storage_[lc];
-          }
-          re = middle;
-          rpos = lc;
-        } else {
-          size_t rc = rightChild(rpos);
-          if (populateMarkToChildren(mark, rpos)) {
-            mark = storage_[rc];
-          }
-          storage_[leftChild(rpos)] = val;
+        downMark(mark, pos);
+        size_t middle = leftMiddle(le, re);
+        if (right > middle) {
+          storage_[leftChild(pos)] = val;
           le = middle + 1;
-          rpos = rc;
+          pos = rightChild(pos);
+        } else {
+          re = middle;
+          pos = leftChild(pos);
         }
       }
       if (le == re) {
-        storage_[rpos] = val;
+        storage_[pos] = val;
       }
-    }
+    };
+    leftPartialUpdate(leftChild(pos), left_edge, middle);
+    rightPartialUpdate(leftChild(pos), middle + 1, right_edge);
   }
 };
 }  // namespace ipq

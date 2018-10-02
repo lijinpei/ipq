@@ -120,14 +120,14 @@ class BTreeMap {
   }
 
   template< class... Args >
-  std::pair<iterator,bool> emplace( Args&&... args ) {
-    value_type value(std::forward(args)...);
-    insert(value);
+  std::pair<iterator,bool> emplace(Args&&... args ) {
+    value_type value(std::forward<Args>(args)...);
+    return insert(value);
   }
 
   template <class... Args>
-  iterator emplace_hint(const_iterator, Args&&... args ) {
-    emplace(std::forward(args)...);
+  std::pair<iterator, bool> emplace_hint(const_iterator, Args&&... args ) {
+    return emplace(std::forward<Args>(args)...);
   }
 
   iterator find(const key_type &key) {
