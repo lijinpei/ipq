@@ -13,17 +13,6 @@
 
 namespace ipq {
 
-class DummyVector {
- public:
-  // FIXME: rvalue reference template parmater pack?
-  template <typename... A>
-  void push_back(A...) {}
-  template <typename... A>
-  void emplace_back(A...) {}
-  template <typename... A>
-  void pop_back(A...) {}
-};
-
 template <typename ElementTy, typename CompTy>
 struct ThreeWayCompAdaptor : CompTy {
   constexpr int operator()(const ElementTy &e1, const ElementTy &e2) const {
@@ -36,7 +25,6 @@ struct ThreeWayCompAdaptor : CompTy {
   }
 };
 
-class DummyVector;
 template <typename ElementTy, typename ThreeWayCompTy, typename AllocTy,
           int MinChildDegree>
 class BTreeSet;
@@ -78,11 +66,14 @@ struct BTreeParams {
     SplitIndex = (MaxNodeDegree - 1) / 2,
     BSearchThreshold = 8
   };
+  /*
   using DegreeCountTy = typename std::conditional<
-      MaxChildDegree <= std::numeric_limits<uint8_t>::max(), uint8_t,
-      typename std::conditional<MaxChildDegree <=
+      MaxChildDegree < std::numeric_limits<uint8_t>::max(), uint8_t,
+      typename std::conditional<MaxChildDegree <
                                     std::numeric_limits<uint16_t>::max(),
                                 uint16_t, uint32_t>::type>::type;
+                                */
+  using DegreeCountTy = int;
   using ValueTy = Value;
   using ThreeWayCompTy = ThreeWayComp;
   using ReferenceTy = ValueTy &;
@@ -135,7 +126,7 @@ struct LeafNode {
     os << std::endl;
   }
   void clear() {
-    for (int i = 0; i < node_degree_; ++i) {
+    for (DegreeCountTy i = 0; i < node_degree_; ++i) {
       this->values_[i].~ValueTy();
     }
   }
@@ -356,6 +347,7 @@ void prev_path(ContTy &path, size_t height) {
     return;
   }
   if (path.size() == height + 1) {
+    assert(!path.empty());
     if (path.back().second) {
       --path.back().second;
       return;
@@ -369,6 +361,7 @@ void prev_path(ContTy &path, size_t height) {
     }
     return;
   }
+  assert(!path.empty());
   typename P::InternalNodeTy *node =
       path.back().first->children_[path.back().second];
   while (path.size() < height) {
@@ -380,16 +373,14 @@ void prev_path(ContTy &path, size_t height) {
   path.emplace_back(node, idx);
 }
 
-template <typename P>
-void prev_path(DummyVector &, size_t) {}
-
 template <typename P, typename ContTy>
 void next_path(ContTy &path, size_t height) {
   if (path.empty()) {
     return;
   }
   if (path.size() == height + 1) {
-    if (path.back().second == path.back().first->node_degree_ - 1) {
+    assert(!path.empty());
+    if (path.back().second == path.back().first->node_degree_ - typename P::DegreeCountTy(1)) {
       path.pop_back();
       while (!path.empty() &&
              path.back().second == path.back().first->node_degree_) {
@@ -397,10 +388,12 @@ void next_path(ContTy &path, size_t height) {
       }
       return;
     } else {
+      assert(!path.empty());
       ++path.back().second;
       return;
     }
   } else {
+    assert(!path.empty());
     ++path.back().second;
     typename P::InternalNodeTy *node =
         path.back().first->children_[path.back().second];
@@ -411,9 +404,6 @@ void next_path(ContTy &path, size_t height) {
     return;
   }
 }
-
-template <typename P>
-void next_path(DummyVector &, size_t) {}
 
 template <typename P>
 class BTreeImpl;
@@ -462,10 +452,12 @@ class BTreeIteratorImpl {
   using iterator_category = std::bidirectional_iterator_tag;
   typename std::conditional<IsConst, const_reference, reference>::type operator
       *() {
+  assert(!path_.empty());
     return path_.back().first->values_[path_.back().second];
   }
   typename std::conditional<IsConst, const value_type *, value_type *>::type
   operator->() {
+  assert(!path_.empty());
     return path_.back().first->values_ + path_.back().second;
   }
   BTreeIteratorImpl &operator++() {
@@ -483,9 +475,17 @@ class BTreeIteratorImpl {
   }
   BTreeIteratorImpl &operator--() {
     if constexpr (IsReverse) {
-      next_path<P>(path_, btree_->internal_height_);
+      if (path_.empty()) {
+        btree_->begin(path_);
+      } else {
+        next_path<P>(path_, btree_->internal_height_);
+      }
     } else {
-      prev_path<P>(path_, btree_->internal_height_);
+      if (path_.empty()) {
+        btree_->rbegin(path_);
+      } else {
+        prev_path<P>(path_, btree_->internal_height_);
+      }
     }
     return *this;
   }
@@ -499,6 +499,9 @@ class BTreeIteratorImpl {
   }
   bool operator!=(const BTreeIteratorImpl &other) const {
     return !(*this == other);
+  }
+  ~BTreeIteratorImpl() {
+    assert(path_.size() < 100);
   }
 };
 
@@ -647,6 +650,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
       if (path.empty()) {
         return nullptr;
       } else {
+  assert(!path.empty());
         return path.back().first->values_ + path.back().second;
       }
     }
@@ -675,10 +679,12 @@ class BTreeImpl : P::LeafNodeAllocTy,
       this->InternalNodeAllocTy::deallocate(right_child, 1);
     }
     if (root_->node_degree_ == 0) {
+      IPQ_ASSERT(parent == root_);
       this->InternalNodeAllocTy::deallocate(root_, 1);
       root_ = left_child;
       --internal_height_;
       --parent_height;
+      assert(!path.empty());
       path.pop_back();
     }
     return left_child;
@@ -831,8 +837,11 @@ class BTreeImpl : P::LeafNodeAllocTy,
           node = new_child;
         }
       } else {
+        path.emplace_back(node, idx);
         auto new_child = tryMakeChildNonMinimal(node, height, idx, dummy_child_idx, path);
-        path.emplace_back(node, res.second);
+        if (!path.empty()) {
+          path.back().second = idx;
+        }
         node = new_child;
       }
       IPQ_ASSERT(!node->isMinimal());
@@ -860,9 +869,12 @@ class BTreeImpl : P::LeafNodeAllocTy,
     DegreeCountTy idx = old_path[0].second;
     size_t height = 0;
     for (size_t old_height = 0; old_height  + 1 < old_path.size(); ++height, ++old_height) {
-      DegreeCountTy child_idx = old_path[old_height + 1].second;
-      path.emplace_back(node, idx);
-      InternalNodeTy* child_node = tryMakeChildNonMinimal(node, height, path.back().second, child_idx, path);
+      DegreeCountTy child_idx = old_path[old_height + 1].second, old_idx = idx;
+      path.emplace_back(node, old_idx);
+      InternalNodeTy* child_node = tryMakeChildNonMinimal(node, height, old_idx, child_idx, path);
+      if (!path.empty()) {
+        path.back().second = old_idx;
+      }
       node = child_node;
       idx = child_idx;
     }
@@ -883,8 +895,11 @@ class BTreeImpl : P::LeafNodeAllocTy,
         --size_;
         return;
       } else {
-        InternalNodeTy *new_child = mergeChildrenAt(node, idx, height, path);
         path.emplace_back(node, idx);
+        InternalNodeTy *new_child = mergeChildrenAt(node, idx, height, path);
+        if (!path.empty()) {
+          path.back().second = idx;
+        }
         node = new_child;
         idx = MinNodeDegree;
       }
@@ -893,8 +908,10 @@ class BTreeImpl : P::LeafNodeAllocTy,
     node->leafRemove(idx);
     --size_;
     if (idx == node->node_degree_) {
+      assert(!path.empty());
       --path.back().second;
       next_path<P>(path, internal_height_);
+    } else {
     }
     return;
   }
@@ -1020,6 +1037,7 @@ class BTreeImpl : P::LeafNodeAllocTy,
     clear(root_, 0);
     internal_height_ = 0;
     root_ = static_cast<InternalNodeTy*>(this->LeafNodeAllocTy::allocate(1));
+    root_->node_degree_ = 0;
     size_ = 0;
   }
 

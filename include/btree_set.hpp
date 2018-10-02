@@ -84,7 +84,7 @@ class BTreeSet {
   void clear() { btree_.clear(); }
 
   size_t erase(const key_type &key) {
-    DummyVector path;
+    std::vector<std::pair<typename Param::InternalNodeTy*, typename Param::DegreeCountTy>> path;
     if (btree_.remove(key, path)) {
       return 1;
     } else {
@@ -115,7 +115,7 @@ class BTreeSet {
   }
 
   size_t count(const key_type &key) {
-    DummyVector vec;
+    std::vector<std::pair<typename Param::InternalNodeTy*, typename Param::DegreeCountTy>> vec;
     auto res = btree_.lowerBound(key, vec);
     return res ? 1 : 0;
   }

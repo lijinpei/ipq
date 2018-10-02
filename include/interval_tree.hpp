@@ -5,7 +5,7 @@
 
 namespace ipq {
 template <typename KeyTy, typename ValTy, typename MapTy>
-class IntervalTree {
+struct IntervalTree {
   MapTy keys;
 
  public:
@@ -18,12 +18,17 @@ class IntervalTree {
     if (key <= iter->second.first) {
       return &iter->second.second;
     } else {
+      std::cout << "try find: " << key << std::endl;
+      std::cout << "first: " << iter->first << std::endl;
+      std::cout << "second: " << iter->second.first << std::endl;
       return nullptr;
     }
   }
 
   void update(KeyTy key1, KeyTy key2, ValTy val) {
     auto iter = keys.lower_bound(key1);
+    if (iter != keys.end()) {
+    }
     while (iter != keys.end() && iter->second.first <= key2) {
       iter = keys.erase(iter);
     }
@@ -51,6 +56,10 @@ class IntervalTree {
     if (iter != keys.begin() && (--iter)->second.first >= key1) {
       iter->second.first = key1 - 1;
     }
+  }
+
+  size_t size() {
+    return keys.size();
   }
 };
 

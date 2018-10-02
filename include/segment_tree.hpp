@@ -7,7 +7,7 @@ namespace ipq {
 template <typename ValueTy>
 struct SegmentTreeTrait {
   /*
-  static void initialNonExist(ValueTy* storage, size_t size);
+  static void initialNonExist(ValueTy* storage);
   static bool isUnmarkValue(const ValueTy& storage);
   static bool isNonExistValue(const ValueTy& storage);
   static void copyUnmarkValue(ValueTy& val);
@@ -68,7 +68,7 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
       : AllocTy(alloc), left_edge_(left), right_edge_(right) {
     size_t s = 2 * size();
     storage_ = this->AllocTy::allocate(s);
-    Trait::initialNonExist(storage_, s);
+    Trait::initialNonExist(storage_);
   }
 
   size_t size() { return right_edge_ - left_edge_ + 1; }
@@ -107,19 +107,21 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
 
   void update(size_t left, size_t right, const ValueTy& val) {
     size_t left_edge = left_edge_, right_edge = right_edge_, pos = 0;
-    if (left == left_edge && right == right_edge) {
-      storage_[0] = val;
-      return;
-    }
     ValueTy mark = storage_[0];
     while (left_edge < right_edge) {
+      if (left == left_edge && right == right_edge) {
+        storage_[pos] = val;
+        return;
+      }
       size_t middle = leftMiddle(left_edge, right_edge);
       if (left > middle) {
         downMarkRight(mark, pos);
+        Trait::copyUnmarkValue(storage_[pos]);
         pos = rightChild(pos);
         left_edge = middle + 1;
       } else if (right <= middle) {
-        downMarkRight(mark, pos);
+        downMarkLeft(mark, pos);
+        Trait::copyUnmarkValue(storage_[pos]);
         pos = leftChild(pos);
         right_edge = middle;
       } else {
@@ -131,19 +133,28 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
       return;
     }
     downMark(mark, pos);
+    Trait::copyUnmarkValue(storage_[pos]);
     size_t middle = leftMiddle(left_edge, right_edge);
     auto leftPartialUpdate = [&](size_t pos, size_t le, size_t re) {
-      ValueTy mark = storage_[pos];
       while (le < re) {
+        if (left == le) {
+          storage_[pos] = val;
+          return;
+        }
+        ValueTy mark = storage_[pos];
         downMark(mark, pos);
+        Trait::copyUnmarkValue(storage_[pos]);
         size_t middle = leftMiddle(le, re);
-        if (left <= middle) {
+        if (left <= middle + 1) {
           storage_[rightChild(pos)] = val;
           re = middle;
           pos = leftChild(pos);
         } else {
           le = middle + 1;
           pos = rightChild(pos);
+        }
+        if (left > re) {
+          return;
         }
       }
       if (le == re) {
@@ -152,11 +163,16 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
     };
 
     auto rightPartialUpdate = [&](size_t pos, size_t le, size_t re) {
-      ValueTy mark = storage_[pos];
       while (le < re) {
+        if (right == re) {
+          storage_[pos] = val;
+          return;
+        }
+        ValueTy mark = storage_[pos];
         downMark(mark, pos);
+        Trait::copyUnmarkValue(storage_[pos]);
         size_t middle = leftMiddle(le, re);
-        if (right > middle) {
+        if (right >= middle) {
           storage_[leftChild(pos)] = val;
           le = middle + 1;
           pos = rightChild(pos);
@@ -164,13 +180,16 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
           re = middle;
           pos = leftChild(pos);
         }
+        if (right < le) {
+          return;
+        }
       }
       if (le == re) {
         storage_[pos] = val;
       }
     };
     leftPartialUpdate(leftChild(pos), left_edge, middle);
-    rightPartialUpdate(leftChild(pos), middle + 1, right_edge);
+    rightPartialUpdate(rightChild(pos), middle + 1, right_edge);
   }
 };
 }  // namespace ipq

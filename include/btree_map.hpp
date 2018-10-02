@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility>
+#include <iostream>
 #include "btree_impl.hpp"
 
 namespace ipq {
@@ -106,7 +107,7 @@ class BTreeMap {
 
   size_type erase(const key_type &key) {
     value_type value{key, ValueTy()};
-    DummyVector path;
+    std::vector<std::pair<typename Param::InternalNodeTy*, typename Param::DegreeCountTy>> path;
     if (btree_.remove(value, path)) {
       return 1;
     } else {
@@ -151,6 +152,7 @@ class BTreeMap {
     btree_.upperBound(value, ret.path_);
     return ret;
   }
+
 };
 
 template <typename KeyTy, typename ValueTy,
