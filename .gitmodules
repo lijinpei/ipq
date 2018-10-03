@@ -1,3 +1,0 @@
-[submodule "third_party/urcu"]
-	path = third_party/urcu
-	url = https://github.com/urcu/userspace-rcu.git

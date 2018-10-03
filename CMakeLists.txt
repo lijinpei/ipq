@@ -8,3 +8,4 @@ set (CMAKE_CXX_FLAGS "-W -Wall -Wextra -Wpedantic")
 
 include_directories (include)
 add_subdirectory (test)
+add_subdirectory (src)

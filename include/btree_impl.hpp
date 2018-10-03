@@ -439,8 +439,10 @@ class BTreeIteratorImpl {
   BTreeIteratorImpl() = default;
   BTreeIteratorImpl(const BTreeIteratorImpl &other) = default;
   BTreeIteratorImpl &operator=(const BTreeIteratorImpl &other) = default;
-  explicit BTreeIteratorImpl(BTreeImplTy* btree) : btree_(btree) {}
-  explicit BTreeIteratorImpl(BTreeImplTy& btree) : btree_(&btree) {}
+  explicit BTreeIteratorImpl(BTreeImplTy* btree) : btree_(btree) {
+    path_.reserve(btree_->height() + 1);
+  }
+  explicit BTreeIteratorImpl(BTreeImplTy& btree) : BTreeIteratorImpl(&btree) {}
   void swap(BTreeIteratorImpl &other) {
     path_.swap(other.path_);
     std::swap(btree_, other.btree_);
@@ -1042,6 +1044,9 @@ class BTreeImpl : P::LeafNodeAllocTy,
   }
 
   size_t size() { return size_; }
+  size_t height() {
+    return internal_height_;
+  }
 };
 
 }  // namespace internal
