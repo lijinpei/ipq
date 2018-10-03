@@ -347,7 +347,6 @@ void prev_path(ContTy &path, size_t height) {
     return;
   }
   if (path.size() == height + 1) {
-    assert(!path.empty());
     if (path.back().second) {
       --path.back().second;
       return;
@@ -361,7 +360,6 @@ void prev_path(ContTy &path, size_t height) {
     }
     return;
   }
-  assert(!path.empty());
   typename P::InternalNodeTy *node =
       path.back().first->children_[path.back().second];
   while (path.size() < height) {
@@ -379,7 +377,6 @@ void next_path(ContTy &path, size_t height) {
     return;
   }
   if (path.size() == height + 1) {
-    assert(!path.empty());
     if (path.back().second == path.back().first->node_degree_ - typename P::DegreeCountTy(1)) {
       path.pop_back();
       while (!path.empty() &&
@@ -388,12 +385,10 @@ void next_path(ContTy &path, size_t height) {
       }
       return;
     } else {
-      assert(!path.empty());
       ++path.back().second;
       return;
     }
   } else {
-    assert(!path.empty());
     ++path.back().second;
     typename P::InternalNodeTy *node =
         path.back().first->children_[path.back().second];
@@ -454,12 +449,10 @@ class BTreeIteratorImpl {
   using iterator_category = std::bidirectional_iterator_tag;
   typename std::conditional<IsConst, const_reference, reference>::type operator
       *() {
-  assert(!path_.empty());
     return path_.back().first->values_[path_.back().second];
   }
   typename std::conditional<IsConst, const value_type *, value_type *>::type
   operator->() {
-  assert(!path_.empty());
     return path_.back().first->values_ + path_.back().second;
   }
   BTreeIteratorImpl &operator++() {
@@ -501,9 +494,6 @@ class BTreeIteratorImpl {
   }
   bool operator!=(const BTreeIteratorImpl &other) const {
     return !(*this == other);
-  }
-  ~BTreeIteratorImpl() {
-    assert(path_.size() < 100);
   }
 };
 
@@ -652,7 +642,6 @@ class BTreeImpl : P::LeafNodeAllocTy,
       if (path.empty()) {
         return nullptr;
       } else {
-  assert(!path.empty());
         return path.back().first->values_ + path.back().second;
       }
     }
@@ -686,7 +675,6 @@ class BTreeImpl : P::LeafNodeAllocTy,
       root_ = left_child;
       --internal_height_;
       --parent_height;
-      assert(!path.empty());
       path.pop_back();
     }
     return left_child;
@@ -910,7 +898,6 @@ class BTreeImpl : P::LeafNodeAllocTy,
     node->leafRemove(idx);
     --size_;
     if (idx == node->node_degree_) {
-      assert(!path.empty());
       --path.back().second;
       next_path<P>(path, internal_height_);
     } else {
