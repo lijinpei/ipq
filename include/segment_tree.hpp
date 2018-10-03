@@ -38,28 +38,10 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
     return leftMiddle(left, right) + 1;
   }
 
-  void downMarkLeft(ValueTy & parent_mark, size_t pos) {
-    if (Trait::isUnmarkValue(parent_mark)) {
-      parent_mark = storage_[leftChild(pos)];
-    } else {
+  void downMark(size_t pos) {
+    if (!Trait::isUnmarkValue(storage_[pos])) {
       size_t lc = leftChild(pos), rc = rightChild(pos);
-      storage_[lc] = storage_[rc] = parent_mark;
-    }
-  }
-
-  void downMarkRight(ValueTy & parent_mark, size_t pos) {
-    if (Trait::isUnmarkValue(parent_mark)) {
-      parent_mark = storage_[rightChild(pos)];
-    } else {
-      size_t lc = leftChild(pos), rc = rightChild(pos);
-      storage_[lc] = storage_[rc] = parent_mark;
-    }
-  }
-
-  void downMark(const ValueTy &parent_mark, size_t pos) {
-    if (!Trait::isUnmarkValue(parent_mark)) {
-      size_t lc = leftChild(pos), rc = rightChild(pos);
-      storage_[lc] = storage_[rc] = parent_mark;
+      storage_[lc] = storage_[rc] = storage_[pos];
     }
   }
 
@@ -77,24 +59,22 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
    */
   const ValueTy* find(size_t point) {
     size_t pos = 0, left = left_edge_, right = right_edge_;
-    ValueTy mark = Trait::getUnmarkValue();
     while (left < right) {
-      if (!Trait::isUnmarkValue(mark)) {
+      if (!Trait::isUnmarkValue(storage_[pos])) {
         break;
       } else {
+        downMark(pos);
         size_t middle = leftMiddle(left, right);
         if (point <= middle) {
-          downMarkLeft(mark, pos);
           pos = leftChild(pos);
           right = middle;
         } else {
-          downMarkRight(mark, pos);
           pos = rightChild(pos);
           left = middle + 1;
         }
       }
     }
-    if (Trait::isNonExistValue(mark)) {
+    if (Trait::isNonExistValue(storage_[pos])) {
       return nullptr;
     } else {
       return storage_ + pos;
@@ -107,7 +87,6 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
 
   void update(size_t left, size_t right, const ValueTy& val) {
     size_t left_edge = left_edge_, right_edge = right_edge_, pos = 0;
-    ValueTy mark = storage_[0];
     while (left_edge < right_edge) {
       if (left == left_edge && right == right_edge) {
         storage_[pos] = val;
@@ -115,12 +94,12 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
       }
       size_t middle = leftMiddle(left_edge, right_edge);
       if (left > middle) {
-        downMarkRight(mark, pos);
+        downMark(pos);
         Trait::copyUnmarkValue(storage_[pos]);
         pos = rightChild(pos);
         left_edge = middle + 1;
       } else if (right <= middle) {
-        downMarkLeft(mark, pos);
+        downMark(pos);
         Trait::copyUnmarkValue(storage_[pos]);
         pos = leftChild(pos);
         right_edge = middle;
@@ -132,7 +111,7 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
       storage_[pos] = val;
       return;
     }
-    downMark(mark, pos);
+    downMark(pos);
     Trait::copyUnmarkValue(storage_[pos]);
     size_t middle = leftMiddle(left_edge, right_edge);
     auto leftPartialUpdate = [&](size_t pos, size_t le, size_t re) {
@@ -141,8 +120,7 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
           storage_[pos] = val;
           return;
         }
-        ValueTy mark = storage_[pos];
-        downMark(mark, pos);
+        downMark(pos);
         Trait::copyUnmarkValue(storage_[pos]);
         size_t middle = leftMiddle(le, re);
         if (left <= middle + 1) {
@@ -157,6 +135,7 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
           return;
         }
       }
+      assert(le == re);
       if (le == re) {
         storage_[pos] = val;
       }
@@ -168,8 +147,7 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
           storage_[pos] = val;
           return;
         }
-        ValueTy mark = storage_[pos];
-        downMark(mark, pos);
+        downMark(pos);
         Trait::copyUnmarkValue(storage_[pos]);
         size_t middle = leftMiddle(le, re);
         if (right >= middle) {
@@ -184,6 +162,7 @@ class SegmentTree : AllocTy::template rebind<ValueTy>::other {
           return;
         }
       }
+      assert(le == re);
       if (le == re) {
         storage_[pos] = val;
       }

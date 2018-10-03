@@ -16,5 +16,6 @@ my_add_test(btree_set_sequential)
 my_add_test(btree_map_sequential)
 my_add_test(btree_set_random)
 my_add_test(btree_map_random)
+my_add_test(segment_tree_interval_tree_random)
 
 add_custom_target(test ctest -j 4 DEPENDS ${test_list})

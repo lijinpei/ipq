@@ -18,9 +18,6 @@ struct IntervalTree {
     if (key <= iter->second.first) {
       return &iter->second.second;
     } else {
-      std::cout << "try find: " << key << std::endl;
-      std::cout << "first: " << iter->first << std::endl;
-      std::cout << "second: " << iter->second.first << std::endl;
       return nullptr;
     }
   }
@@ -39,7 +36,11 @@ struct IntervalTree {
     }
     iter = keys.emplace(key1, std::make_pair(key2, val)).first;
     if (iter != keys.begin() && (--iter)->second.first >= key1) {
+      auto old_val = iter->second;
       iter->second.first = key1 - 1;
+      if (old_val.first > key2) {
+        keys.emplace(key2 + 1, old_val);
+      }
     }
   }
 
@@ -54,7 +55,11 @@ struct IntervalTree {
       iter = keys.emplace(key2 + 1, old_val).first;
     }
     if (iter != keys.begin() && (--iter)->second.first >= key1) {
+      auto old_val = iter->second;
       iter->second.first = key1 - 1;
+      if (old_val.first > key2) {
+        keys.emplace(key2 + 1, old_val);
+      }
     }
   }
 
